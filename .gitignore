@@ -169,3 +169,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Datasets
+musdb18/
+UrbanSound8K/
