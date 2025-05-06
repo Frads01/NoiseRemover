@@ -9,6 +9,8 @@ Creates pairs of audio signals (input, target) by mixing songs with different no
 import os
 import argparse
 import random
+import shutil
+import numpy as np
 import torch
 import torchaudio
 import torchaudio.transforms as T
@@ -18,11 +20,11 @@ import tempfile
 from typing import List, Tuple, Optional
 
 # Default global constants
-DEFAULT_NOISE_DIR = "../UrbanSound8K/audio/"
-DEFAULT_MUSIC_DIR = "../musdb18/train/"
-DEFAULT_OUTPUT_DIR = "output_audio_generato"
-ITER_SONGS = 5
-ITER_NOISE = 20
+DEFAULT_NOISE_DIR = "..\\UrbanSound8K\\audio\\"
+DEFAULT_MUSIC_DIR = "..\\musdb18\\train\\"
+DEFAULT_OUTPUT_DIR = "tmp"
+ITER_SONGS = 5 
+ITER_NOISE = 20 
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -35,10 +37,10 @@ def parse_arguments():
     
     # Use provided paths or defaults
     path_canzoni = args.music_dir if args.music_dir else DEFAULT_MUSIC_DIR
-    path_rumori = args.noise_dir if args.noise_dir else DEFAULT_NOISE_DIR
+    noise_path = args.noise_dir if args.noise_dir else DEFAULT_NOISE_DIR
     path_output = args.output_dir if args.output_dir else DEFAULT_OUTPUT_DIR
     
-    return path_canzoni, path_rumori, path_output
+    return path_canzoni, noise_path, path_output
 
 def setup_device():
     """Setup PyTorch device (GPU if available, else CPU)"""
@@ -46,7 +48,11 @@ def setup_device():
 
 def ensure_output_directory(path_output):
     """Create output directory if it doesn't exist"""
+    if os.path.isdir(path_output):
+        shutil.rmtree(path_output)
+
     os.makedirs(path_output, exist_ok=True)
+
 
 def load_mp4_audio(file_path, device):
     """
@@ -59,18 +65,31 @@ def load_mp4_audio(file_path, device):
         return waveform.to(device), sample_rate
     except Exception:
         # If direct loading fails, use ffmpeg to extract audio to a temporary WAV file
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_file:
-            temp_path = temp_file.name
-            # Extract first audio track (0) using ffmpeg
-            subprocess.run([
-                'ffmpeg', '-y', '-i', file_path, 
-                '-map', '0:a:0', '-c:a', 'pcm_s16le', 
-                temp_path
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+        # Fallback to ffmpeg: create a temporary WAV file name
+        fd, temp_wav_path = tempfile.mkstemp(suffix='.wav')
+        os.close(fd)  # Close the OS-level file descriptor
+
+        try:
+            subprocess.run(
+                ['ffmpeg', '-y', '-i', file_path, '-map', '0:a:0', '-c:a', 'pcm_s16le', temp_wav_path],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
             # Load the temporary WAV file
-            waveform, sample_rate = torchaudio.load(temp_path)
+            waveform, sample_rate = torchaudio.load(temp_wav_path)
             return waveform.to(device), sample_rate
+        except subprocess.CalledProcessError as e_ffmpeg:
+            # Re-raise if ffmpeg command itself fails
+            raise RuntimeError(f"ffmpeg conversion failed for {file_path}") from e_ffmpeg
+        except Exception as e_load_wav:
+            # Re-raise if loading the temporary WAV fails
+            raise RuntimeError(f"Failed to load temporary WAV {temp_wav_path} (from {file_path}) after ffmpeg conversion.") from e_load_wav
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(temp_wav_path):
+                try:
+                    os.remove(temp_wav_path)
+                except OSError:
+                    pass # Silently ignore errors during temporary file cleanup
 
 def normalize_tensor(tensor):
     """Normalize tensor to range [-1.0, 1.0]"""
@@ -148,47 +167,49 @@ def prepare_noise_tensor(noise_path, sr_canzone, channels, length, device):
     
     return tensor_rumore
 
-def get_random_noise_pair(path_rumori, prev_pair=None):
+def get_random_noise_pair(noise_path, prev_pair=None):
     """
     Select two noise files from different subdirectories, 
     ensuring they're different from the previous pair
     """
     # Get subdirectory paths
-    noise_subdirs = [p for p in Path(path_rumori).iterdir() if p.is_dir()]
+    noise_subdirs = [p for p in Path(noise_path).iterdir() if p.is_dir()]
     if len(noise_subdirs) < 2:
-        raise ValueError(f"Need at least 2 subdirectories in {path_rumori}")
-    
+        raise ValueError(f"Need at least 2 subdirectories in {noise_path}")
+      
     # Select two different subdirectories
     subdir1, subdir2 = random.sample(noise_subdirs, 2)
-    
+
     # Get WAV files from each subdirectory
     files1 = list(subdir1.glob('*.wav'))
     files2 = list(subdir2.glob('*.wav'))
-    
+
     if not files1 or not files2:
         raise ValueError(f"No WAV files found in one of the subdirectories")
-    
-    # Select random files
-    file1 = random.choice(files1)
-    file2 = random.choice(files2)
-    
-    # Ensure the pair is different from the previous one
-    if prev_pair and (file1, file2) == prev_pair:
-        # Try to select different files
-        attempts = 0
-        while (file1, file2) == prev_pair and attempts < 5:
-            file1 = random.choice(files1)
-            file2 = random.choice(files2)
-            attempts += 1
-        
-        # If still the same, swap subdirectories
-        if (file1, file2) == prev_pair:
-            file1 = random.choice(files2)
-            file2 = random.choice(files1)
-    
-    return file1, file2
 
-def process_song_and_noises(song_path, path_rumori, path_output, device):
+    # Function to extract classID from filename
+    def get_class_id(filename):
+        parts = filename.stem.split('-')
+        if len(parts) >= 2:
+            return parts[1]
+        return None
+    
+    # Select random files with different classIDs
+    
+    while 1:
+        file1 = random.choice(files1)
+        file2 = random.choice(files2)
+        
+        # Check if files have different classIDs
+        class_id1 = get_class_id(file1)
+        class_id2 = get_class_id(file2)
+        
+        # Ensure different classIDs and different from previous pair
+        if class_id1 and class_id2 and class_id1 != class_id2 and (not prev_pair or (file1, file2) != prev_pair):
+            return file1, file2
+        
+
+def process_song_and_noises(song_path, noise_path, path_output, device, i):
     """
     Process a song with multiple noise pairs to create input/target pairs
     Returns a list of (input, target) tensor pairs for the song
@@ -203,18 +224,20 @@ def process_song_and_noises(song_path, path_rumori, path_output, device):
     L_canzone = tensor_canzone_base.shape[1]
     
     # Initialize list to store tensor pairs
-    lista_coppie_tensori = []
+    tensor_tuples_list = []
     
     # Track previous noise pair to avoid repetition
     prev_noise_pair = None
+
+    high_n = np.random.randint(ITER_NOISE)
     
     # Process ITER_NOISE noise pairs
-    for i in range(ITER_NOISE):
-        if i % 10 == 0:  # Reduced feedback
-            print(f"  Processing noise pair {i+1}/{ITER_NOISE}")
+    for j in range(1, high_n+1):
+        if j % 5 == 0:  # Reduced feedback
+            print(f"  Processing noise pair {j}/{high_n}")
         
         # Select two different noise files
-        file_rumore1, file_rumore2 = get_random_noise_pair(path_rumori, prev_noise_pair)
+        file_rumore1, file_rumore2 = get_random_noise_pair(noise_path, prev_noise_pair)
         prev_noise_pair = (file_rumore1, file_rumore2)
         
         # Prepare noise tensors
@@ -237,12 +260,11 @@ def process_song_and_noises(song_path, path_rumori, path_output, device):
         tensor_target = mix_target_temp / peak_target
         
         # Save audio files
-        nome_base_canzone = Path(song_path).stem
         nome_base_rumore1 = file_rumore1.stem
         nome_base_rumore2 = file_rumore2.stem
         
-        nome_file_input = f"{nome_base_canzone}_{nome_base_rumore1}_INPUT.wav"
-        nome_file_target = f"{nome_base_canzone}_{nome_base_rumore2}_TARGET.wav"
+        nome_file_input = f"S{i}_N{j}_{nome_base_rumore1}_INPUT.wav"
+        nome_file_target = f"S{i}_N{j}_{nome_base_rumore2}_TARGET.wav"
         
         path_file_input = Path(path_output) / nome_file_input
         path_file_target = Path(path_output) / nome_file_target
@@ -265,16 +287,16 @@ def process_song_and_noises(song_path, path_rumori, path_output, device):
         )
         
         # Store tensors for later use
-        lista_coppie_tensori.append((tensor_input.clone(), tensor_target.clone()))
+        tensor_tuples_list.append((tensor_input.clone(), tensor_target.clone()))
     
-    return lista_coppie_tensori
+    return tensor_tuples_list
 
 def main():
     """Main function to process songs and noises"""
     print("Avvio script...")
     
     # Parse arguments and setup
-    path_canzoni, path_rumori, path_output = parse_arguments()
+    path_canzoni, noise_path, path_output = parse_arguments()
     device = setup_device()
     print(f"Using device: {device}")
     
@@ -292,10 +314,12 @@ def main():
     
     # Main results list
     all_song_results = []
+
+    high_s = np.random.randint(ITER_SONGS)
     
     # Process ITER_SONGS songs
-    for i in range(min(ITER_SONGS, len(song_files))):
-        print(f"Elaborazione canzone {i+1}/{ITER_SONGS}")
+    for i in range(1, high_s+1):
+        print(f"Elaborazione canzone {i}/{high_s}")
         
         # Select random song (different from previous)
         available_songs = [s for s in song_files if s != prev_song]
@@ -306,12 +330,13 @@ def main():
         prev_song = song_path
         
         # Process song with noise pairs
-        song_tensor_pairs = process_song_and_noises(song_path, path_rumori, path_output, device)
+        song_tensor_pairs = process_song_and_noises(song_path, noise_path, path_output, device, i)
         
         # Append results
         all_song_results.append(song_tensor_pairs)
     
     print("Elaborazione completata. Restituzione dati.")
+    print(all_song_results)
     return all_song_results
 
 if __name__ == "__main__":

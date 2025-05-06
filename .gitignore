@@ -173,5 +173,4 @@ cython_debug/
 # Datasets
 musdb18/
 UrbanSound8K/
-scripts/TEST_FILES/
-scripts/db_merged
+scripts/tmp/
