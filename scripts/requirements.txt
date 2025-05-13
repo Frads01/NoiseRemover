@@ -1,11 +1,11 @@
 # PyTorch con CUDA 12.8
 --index-url https://download.pytorch.org/whl/cu128
-torch
+torch~=2.7.0+cu128
 torchvision
-torchaudio
+torchaudio~=2.7.0
 
 # Librerie fondamentali per data science e ML
-numpy
+numpy~=2.2.5
 pandas
 scikit-learn
 matplotlib
@@ -17,3 +17,6 @@ datasets
 
 # Utility
 tqdm
+
+soundfile~=0.13.1
+pydub~=0.25.1

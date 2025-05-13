@@ -1,538 +1,702 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Audio Overlay Script (CUDA Optimized)
--------------------
-Sovrappone file audio di rumore a file audio di canzoni
-con opzioni specifiche di filtraggio, elaborazione e output.
-Utilizza CUDA/GPU quando disponibile per massimizzare le prestazioni.
-Supporta vari formati audio attraverso pydub e torchaudio.
-"""
-
 import os
-import argparse
 import sys
-import torch
-import torchaudio
+import argparse
+import random
 import numpy as np
-import warnings
-import time
-import tempfile
-import shutil
 from pathlib import Path
-from pydub import AudioSegment
 import subprocess
+import shutil
+import traceback
+from pydub import AudioSegment
+import torch
+import wave
+import soundfile as sf
 
-# Per ignorare i warning non critici
-warnings.filterwarnings("ignore")
+# Costanti globali
+ITER_SONGS = 10  # Numero di canzoni da processare
+ITER_NOISE = 20  # Numero di coppie di rumori per canzone
+INPUT_DIR = ".\\input"
+TARGET_DIR = ".\\target"
+SONGS_DIR = "..\\musdb18\\train"
+NOISE_DIR = "..\\UrbanSound8K\\audio"
 
-def clean_output_directory(output_dir):
-    """Cancella tutti i file nella directory di output se esiste."""
-    print(f"\nPulizia directory di output: {output_dir}")
-    if os.path.exists(output_dir):
-        for file in os.listdir(output_dir):
-            file_path = os.path.join(output_dir, file)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                    print(f"  - Rimosso: {file}")
-            except Exception as e:
-                print(f"  ! Errore rimuovendo {file}: {e}")
-        print(f"✓ Directory pulita: {len(os.listdir(output_dir))} file rimasti")
-    else:
-        os.makedirs(output_dir)
-        print(f"✓ Creata nuova directory: {output_dir}")
 
-def debug_file_existence(file_path):
-    """Verifica e stampa informazioni dettagliate sul file."""
-    print(f"\nDEBUG - Verifico esistenza file: {file_path}")
-    
-    if os.path.exists(file_path):
-        print(f"✓ Il file esiste")
-        print(f"  - Dimensione: {os.path.getsize(file_path)} bytes")
-        print(f"  - Ultima modifica: {time.ctime(os.path.getmtime(file_path))}")
-        
-        # Controlla se il file è leggibile
-        try:
-            with open(file_path, 'rb') as f:
-                f.read(1)
-            print("  - Il file è leggibile")
-        except Exception as e:
-            print(f"  - ERRORE: Il file non è leggibile: {str(e)}")
-    else:
-        # Se il file non esiste, controlliamo la directory
-        dir_path = os.path.dirname(file_path)
-        print(f"✗ Il file NON esiste")
-        
+def clean_directory(dir_path):
+    """Pulisce o crea la directory di output se non esiste."""
+    try:
         if os.path.exists(dir_path):
-            print(f"  - La directory {dir_path} esiste")
-            print("  - Files nella directory:")
-            for f in os.listdir(dir_path):
-                print(f"      {f}")
+            # Rimuove il contenuto della directory se esiste
+            for item in os.listdir(dir_path):
+                item_path = os.path.join(dir_path, item)
+                if os.path.isfile(item_path):
+                    os.unlink(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+            print(f"Pulita directory esistente: {dir_path}")
         else:
-            print(f"  - La directory {dir_path} NON esiste")
-            parent_dir = os.path.dirname(dir_path)
-            if os.path.exists(parent_dir):
-                print(f"  - La directory padre {parent_dir} esiste")
-                print("  - Directories presenti:")
-                for d in os.listdir(parent_dir):
-                    if os.path.isdir(os.path.join(parent_dir, d)):
-                        print(f"      {d}/")
+            # Crea la directory se non esiste
+            os.makedirs(dir_path)
+            print(f"Creata directory: {dir_path}")
+        return True
+    except Exception as e:
+        print(f"Errore durante la creazione/pulizia della directory {dir_path}: {e}")
+        return False
 
 def verify_ffmpeg():
-    """Verifica che ffmpeg sia installato e funzionante."""
-    print("\nVerifica di FFmpeg:")
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            print("✓ FFmpeg installato e funzionante")
-            print(f"  Versione: {result.stdout.splitlines()[0]}")
-            return True
-        else:
-            print(f"✗ FFmpeg non funzionante (codice errore {result.returncode})")
-            return False
-    except FileNotFoundError:
-        print("✗ FFmpeg non trovato nel PATH")
-        return False
-    except Exception as e:
-        print(f"✗ Errore verificando FFmpeg: {str(e)}")
-        return False
-
-def db_to_amplitude(db):
-    """Converte un valore in dB a un fattore di amplificazione."""
-    return 10 ** (db / 20)
-
-def is_audio_file(filename):
-    """Verifica se un file è un formato audio supportato."""
-    audio_extensions = ['.wav', '.mp3', '.aac', '.flac', '.m4a', '.ogg', '.mp4']
-    return any(filename.lower().endswith(ext) for ext in audio_extensions)
-
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def load_audio(file_path, device):
-    """
-    Carica un file audio utilizzando torchaudio o pydub con supporto CUDA.
-    """
-    if not os.path.exists(file_path):
-        debug_file_existence(file_path)
-        raise FileNotFoundError(f"Il file {file_path} non esiste")
-    
-    print(f"Caricamento di {os.path.basename(file_path)}")
-    
-    try:
-        # Primo tentativo: torchaudio (più efficiente con GPU)
+    """Verifica se ffmpeg è installato e accessibile nel PATH."""
+    if shutil.which("ffmpeg"):
+        print("INFO: ffmpeg trovato.")
         try:
-            waveform, sample_rate = torchaudio.load(file_path)
-            # Sposta immediatamente su GPU se disponibile
-            waveform = waveform.to(device)
-            return waveform, sample_rate
-        except Exception as e:
-            print(f"✗ torchaudio fallito: {str(e)}")
-        
-        # Secondo tentativo: pydub con ffmpeg
-        audio = AudioSegment.from_file(file_path)
-        sample_rate = audio.frame_rate
-        channels = audio.channels
-        
-        # Converti a numpy array e poi a tensor PyTorch
-        samples = np.array(audio.get_array_of_samples())
-        
-        # Reshape per canali corretti
-        if channels == 2:
-            samples = samples.reshape((-1, 2)).T
-        else:
-            samples = samples.reshape((1, -1))
-        
-        # Normalizza in range [-1.0, 1.0]
-        if samples.dtype == np.int16:
-            samples = samples.astype(np.float32) / 32768.0
-        elif samples.dtype == np.int32:
-            samples = samples.astype(np.float32) / 2147483648.0
-        
-        # Converti a tensor PyTorch e sposta su device
-        waveform = torch.from_numpy(samples.astype(np.float32)).to(device)
-        
-        return waveform, sample_rate
-    
-    except Exception as e:
-        raise Exception(f"Impossibile caricare {file_path}: {str(e)}")
-
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def save_audio(waveform, sample_rate, file_path, format_settings):
-    """
-    Salva un tensor PyTorch come file audio AAC ad alta qualità.
-    """
-    print(f"Salvataggio in {file_path}...")
-    
-    try:
-        # Ottimizzazione: sposta sempre su CPU prima del salvataggio
-        waveform_cpu = waveform.cpu()
-        
-        # Per AAC ad alta qualità (impostazioni specificate)
-        if file_path.lower().endswith('.m4a'):
-            # Usa torchaudio se possibile per formato AAC
-            try:
-                torchaudio.save(
-                    file_path,
-                    waveform_cpu,
-                    sample_rate,
-                    format="mp4",
-                    compression=-2,  # Alta qualità
-                    bits_per_sample=16
-                )
-                return
-            except Exception:
-                pass
-            
-            # Fallback a pydub per AAC
-            # Normalizza e converti a int16
-            waveform_np = waveform_cpu.numpy()
-            max_val = np.max(np.abs(waveform_np))
-            if max_val > 0:
-                waveform_np = waveform_np / max_val
-            waveform_np = (waveform_np * 32767).astype(np.int16)
-            
-            # Formatta per AudioSegment
-            if waveform_np.shape[0] > 1:  # stereo
-                waveform_np = waveform_np.T
-            else:  # mono
-                waveform_np = waveform_np.T.reshape(-1)
-            
-            # Crea AudioSegment
-            if waveform_np.ndim == 1 or waveform_np.shape[1] == 1:  # mono
-                audio = AudioSegment(
-                    waveform_np.tobytes(),
-                    frame_rate=sample_rate,
-                    sample_width=2,  # 16 bit
-                    channels=1
-                )
-            else:  # stereo
-                audio = AudioSegment(
-                    waveform_np.tobytes(),
-                    frame_rate=sample_rate,
-                    sample_width=2,  # 16 bit
-                    channels=2
-                )
-            
-            # Esporta con massima qualità
-            audio.export(
-                file_path, 
-                format="ipod",  # pydub usa "ipod" per AAC
-                bitrate="320k",  # Massimo bitrate
-                parameters=["-q:a", "0"]  # Massima qualità
-            )
-    except Exception as e:
-        raise Exception(f"Impossibile salvare {file_path}: {str(e)}")
-
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def normalize_audio(waveform):
-    """Normalizza l'audio per avere picco massimo a 0 dB."""
-    max_val = torch.max(torch.abs(waveform))
-    if max_val > 0:
-        return waveform / max_val
-    return waveform
-
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def adjust_volume(waveform, db_change):
-    """Applica un aggiustamento di volume in dB al waveform."""
-    if db_change == 0:
-        return waveform
-    return waveform * db_to_amplitude(db_change)
-
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def loop_or_truncate(noise_waveform, noise_sample_rate, song_length, song_sample_rate):
-    """
-    Adatta il rumore alla lunghezza della canzone, loopandolo se necessario
-    o troncandolo se è più lungo.
-    """
-    target_length = int(song_length * noise_sample_rate / song_sample_rate)
-    noise_length = noise_waveform.shape[1]
-    
-    if noise_length >= target_length:
-        # Tronca il rumore se è più lungo (operazione efficiente)
-        return noise_waveform[:, :target_length]
+            subprocess.run(['ffmpeg', '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return True
+        except (subprocess.CalledProcessError, OSError) as e:
+            print(f"ERRORE: Problema nell'eseguire ffmpeg: {e}")
+            return False
     else:
-        # Loop il rumore se è più corto
-        device = noise_waveform.device
-        repeats = target_length // noise_length
-        remainder = target_length % noise_length
-        
-        # Ottimizzazione: allocazione unica in memoria
-        looped_noise = torch.zeros((noise_waveform.shape[0], target_length), 
-                                  device=device, dtype=noise_waveform.dtype)
-        
-        # Ottimizzazione: operazione batch invece di cicli
-        for i in range(repeats):
-            start_pos = i * noise_length
-            looped_noise[:, start_pos:start_pos + noise_length] = noise_waveform
-        
-        if remainder > 0:
-            start_pos = repeats * noise_length
-            looped_noise[:, start_pos:] = noise_waveform[:, :remainder]
-            
-        return looped_noise
+        print("ERRORE: ffmpeg non trovato. Assicurati che sia installato e nel PATH di sistema.")
+        return False
 
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def resample_if_needed(waveform, orig_sample_rate, target_sample_rate):
-    """Ricampiona il waveform se necessario."""
-    if orig_sample_rate != target_sample_rate:
-        # Sposta il resampler sul device del waveform per efficienza
-        resampler = torchaudio.transforms.Resample(
-            orig_freq=orig_sample_rate,
-            new_freq=target_sample_rate
-        ).to(waveform.device)
-        return resampler(waveform)
-    return waveform
 
-@torch.no_grad()  # Ottimizzazione: disabilita il calcolo dei gradienti
-def convert_to_stereo(waveform):
-    """Converte l'audio a stereo se è mono."""
-    if waveform.shape[0] == 1:  # Se è mono
-        # Ottimizzazione: usa clone anziché cat quando possibile
-        return torch.cat([waveform, waveform], dim=0)
-    return waveform[:2]  # Se ha più di 2 canali, prendi solo i primi 2
+def is_audio_file(file_path):
+    """Verifica se il file è un file audio supportato."""
+    audio_extensions = {'.wav', '.mp3', '.flac', '.mp4', '.aac', '.ogg', '.m4a'}
+    return os.path.isfile(file_path) and os.path.splitext(file_path)[1].lower() in audio_extensions
+
+
+def load_audio(file_path, use_cuda=False):
+    """
+    Carica un file audio utilizzando librerie di supporto appropriate.
+    Prova prima soundfile, poi pydub, gestendo diversi formati e codifiche.
+    """
+    try:
+        # Prova prima con soundfile che supporta molti formati WAV
+        try:
+            data, sample_rate = sf.read(file_path, always_2d=True)
+            # Trasforma in (canali, campioni) se è in (campioni, canali)
+            if data.shape[1] <= 2:  # Se la seconda dimensione è 1 o 2 (mono o stereo)
+                data = data.T
+
+            channels = data.shape[0]
+            sample_width = 2  # Assumiamo 16-bit per default
+
+            # Se richiesto e disponibile, sposta su CUDA
+            if use_cuda and torch.cuda.is_available():
+                data_tensor = torch.tensor(data, dtype=torch.float32).to('cuda')
+                return {
+                    'tensor': data_tensor,
+                    'sample_rate': sample_rate,
+                    'channels': channels,
+                    'sample_width': sample_width,
+                    'format': os.path.splitext(file_path)[1][1:],
+                    'cuda': True
+                }
+            else:
+                return {
+                    'array': data,
+                    'sample_rate': sample_rate,
+                    'channels': channels,
+                    'sample_width': sample_width,
+                    'format': os.path.splitext(file_path)[1][1:],
+                    'cuda': False
+                }
+        except Exception as sf_error:
+            # Se soundfile fallisce, prova con pydub
+            try:
+                audio = AudioSegment.from_file(file_path)
+
+                # Conversione in numpy array
+                samples = np.array(audio.get_array_of_samples())
+
+                # Se è mono, reshappiamo l'array per avere la dimensione del canale
+                if audio.channels == 1:
+                    samples = samples.reshape(1, -1)
+                else:
+                    # Converte un array stereo in formato (canali, samples)
+                    samples = samples.reshape(-1, audio.channels).T
+
+                # Se richiesto e disponibile, sposta su CUDA
+                if use_cuda and torch.cuda.is_available():
+                    samples_tensor = torch.tensor(samples, dtype=torch.float32).to('cuda')
+                    return {
+                        'tensor': samples_tensor,
+                        'sample_rate': audio.frame_rate,
+                        'channels': audio.channels,
+                        'sample_width': audio.sample_width,
+                        'format': os.path.splitext(file_path)[1][1:],
+                        'cuda': True
+                    }
+                else:
+                    return {
+                        'array': samples,
+                        'sample_rate': audio.frame_rate,
+                        'channels': audio.channels,
+                        'sample_width': audio.sample_width,
+                        'format': os.path.splitext(file_path)[1][1:],
+                        'cuda': False
+                    }
+            except Exception as pydub_error:
+                # Se anche pydub fallisce, usa direttamente ffmpeg per convertire il file
+                try:
+                    temp_dir = os.path.join(os.getcwd(), "temp")
+                    os.makedirs(temp_dir, exist_ok=True)
+                    temp_wav = os.path.join(temp_dir, f"temp_{os.path.basename(file_path)}.wav")
+
+                    # Converti il file problematico in WAV usando ffmpeg
+                    command = [
+                        'ffmpeg',
+                        '-i', file_path,
+                        '-acodec', 'pcm_s16le',
+                        '-y',
+                        temp_wav
+                    ]
+
+                    subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                    # Ora carica il file WAV temporaneo con wave
+                    with wave.open(temp_wav, 'rb') as wf:
+                        # Ottieni le proprietà
+                        channels = wf.getnchannels()
+                        sample_width = wf.getsampwidth()
+                        sample_rate = wf.getframerate()
+                        frames = wf.getnframes()
+
+                        # Leggi i dati
+                        buffer = wf.readframes(frames)
+                        samples = np.frombuffer(buffer, dtype=np.int16)
+
+                        # Riorganizza in (canali, campioni)
+                        if channels > 1:
+                            samples = samples.reshape(-1, channels).T
+                        else:
+                            samples = samples.reshape(1, -1)
+
+                    # Rimuovi il file temporaneo
+                    os.remove(temp_wav)
+
+                    # Se richiesto e disponibile, sposta su CUDA
+                    if use_cuda and torch.cuda.is_available():
+                        samples_tensor = torch.tensor(samples, dtype=torch.float32).to('cuda')
+                        return {
+                            'tensor': samples_tensor,
+                            'sample_rate': sample_rate,
+                            'channels': channels,
+                            'sample_width': sample_width,
+                            'format': 'wav',
+                            'cuda': True
+                        }
+                    else:
+                        return {
+                            'array': samples,
+                            'sample_rate': sample_rate,
+                            'channels': channels,
+                            'sample_width': sample_width,
+                            'format': 'wav',
+                            'cuda': False
+                        }
+                except Exception as ffmpeg_error:
+                    print(f"Errore durante la conversione con ffmpeg: {ffmpeg_error}")
+                    print(f"Errore originale con soundfile: {sf_error}")
+                    print(f"Errore con pydub: {pydub_error}")
+                    return None
+
+    except Exception as e:
+        print(f"Errore durante il caricamento del file audio {file_path}: {e}")
+        traceback.print_exc()
+        return None
+
+
+def save_audio(audio_data, output_path, format_='wav'):
+    """Salva i dati audio in un file, supportando sia dati numpy che tensori PyTorch."""
+    try:
+        # Estrai i dati in formato numpy se sono su CUDA
+        if audio_data.get('cuda', False):
+            samples = audio_data['tensor'].cpu().numpy()
+        else:
+            samples = audio_data['array']
+
+        # Assicurati che i dati siano in int16 per la compatibilità con la maggior parte dei formati audio
+        if samples.dtype != np.int16:
+            # Scala e converti in int16 se necessario
+            if samples.dtype == np.float32 or samples.dtype == np.float64:
+                # Assumiamo che i float siano in range [-1, 1]
+                samples = (samples * 32767).astype(np.int16)
+            else:
+                samples = samples.astype(np.int16)
+
+        # Crea la directory di output se non esiste
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+        # Prova a salvare con soundfile per prima scelta
+        try:
+            # Reshaping se necessario per soundfile (campioni, canali)
+            sf_samples = samples.T
+            sf.write(output_path, sf_samples, audio_data['sample_rate'])
+            return True
+        except Exception as sf_error:
+            # Fallback a pydub
+            try:
+                # Converti in formato adatto per pydub (canali, samples) -> (samples, canali)
+                if samples.ndim > 1:
+                    pydub_samples = samples.T.reshape(-1)
+                else:
+                    pydub_samples = samples
+
+                # Crea un nuovo AudioSegment
+                segment = AudioSegment(
+                    pydub_samples.tobytes(),
+                    frame_rate=audio_data['sample_rate'],
+                    sample_width=audio_data['sample_width'],
+                    channels=audio_data['channels']
+                )
+
+                # Salva il file
+                segment.export(output_path, format=format_)
+                return True
+            except Exception as pydub_error:
+                # Se anche pydub fallisce, usa ffmpeg direttamente
+                try:
+                    # Salva temporaneamente come raw PCM
+                    temp_dir = os.path.join(os.getcwd(), "temp")
+                    os.makedirs(temp_dir, exist_ok=True)
+                    temp_raw = os.path.join(temp_dir, "temp_raw.pcm")
+
+                    # Salva i dati raw
+                    with open(temp_raw, 'wb') as f:
+                        if samples.ndim > 1:
+                            # Converti da (canali, campioni) a (campioni, canali)
+                            samples_interleaved = samples.T.reshape(-1)
+                        else:
+                            samples_interleaved = samples
+                        f.write(samples_interleaved.tobytes())
+
+                    # Usa ffmpeg per convertire da raw PCM al formato desiderato
+                    command = [
+                        'ffmpeg',
+                        '-f', 's16le',  # formato di input
+                        '-ar', str(audio_data['sample_rate']),  # sample rate
+                        '-ac', str(audio_data['channels']),  # canali
+                        '-i', temp_raw,  # file di input
+                        '-y',  # sovrascrivi
+                        output_path  # file di output
+                    ]
+
+                    subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                    # Rimuovi il file temporaneo
+                    os.remove(temp_raw)
+                    return True
+                except Exception as ffmpeg_error:
+                    print(f"Errore durante il salvataggio con ffmpeg: {ffmpeg_error}")
+                    print(f"Errore originale con soundfile: {sf_error}")
+                    print(f"Errore con pydub: {pydub_error}")
+                    return False
+    except Exception as e:
+        print(f"Errore durante il salvataggio del file audio {output_path}: {e}")
+        traceback.print_exc()
+        return False
+
+
+def make_audio_zero_mean(audio_data):
+    """
+    Rende l'audio a media zero. Funziona sia con array numpy che con tensori PyTorch.
+    Versione semplificata rispetto a zero_mean.py
+    """
+    try:
+        if audio_data.get('cuda', False):
+            # Versione CUDA con PyTorch
+            samples = audio_data['tensor']
+            mean = torch.mean(samples.float(), dim=1, keepdim=True)
+            samples = samples - mean
+            audio_data['tensor'] = samples
+        else:
+            # Versione CPU con numpy
+            samples = audio_data['array']
+            mean = np.mean(samples, axis=1, keepdims=True)
+            samples = samples - mean
+            audio_data['array'] = samples
+
+        return audio_data
+    except Exception as e:
+        print(f"Errore durante l'azzeramento della media: {e}")
+        return None
+
+
+def loop_or_truncate(audio_data, target_length):
+    """
+    Loop o tronca l'audio per raggiungere la lunghezza target.
+    Funziona sia con array numpy che con tensori PyTorch.
+    """
+    try:
+        if audio_data.get('cuda', False):
+            # Versione CUDA con PyTorch
+            samples = audio_data['tensor']
+            current_length = samples.shape[1]
+
+            if current_length >= target_length:
+                # Tronca se più lungo
+                audio_data['tensor'] = samples[:, :target_length]
+            else:
+                # Loop se più corto
+                num_repeats = target_length // current_length
+                remainder = target_length % current_length
+
+                repeated = samples.repeat(1, num_repeats)
+                if remainder > 0:
+                    remainder_part = samples[:, :remainder]
+                    audio_data['tensor'] = torch.cat([repeated, remainder_part], dim=1)
+                else:
+                    audio_data['tensor'] = repeated
+        else:
+            # Versione CPU con numpy
+            samples = audio_data['array']
+            current_length = samples.shape[1]
+
+            if current_length >= target_length:
+                # Tronca se più lungo
+                audio_data['array'] = samples[:, :target_length]
+            else:
+                # Loop se più corto
+                num_repeats = target_length // current_length
+                remainder = target_length % current_length
+
+                repeated = np.tile(samples, (1, num_repeats))
+                if remainder > 0:
+                    remainder_part = samples[:, :remainder]
+                    audio_data['array'] = np.concatenate([repeated, remainder_part], axis=1)
+                else:
+                    audio_data['array'] = repeated
+
+        return audio_data
+    except Exception as e:
+        print(f"Errore durante il loop/troncamento dell'audio: {e}")
+        return None
+
+
+def convert_to_stereo(audio_data):
+    """Converte l'audio in stereo se è mono."""
+    try:
+        if audio_data.get('cuda', False):
+            # Versione CUDA con PyTorch
+            samples = audio_data['tensor']
+            if samples.shape[0] == 1:  # È mono
+                audio_data['tensor'] = samples.repeat(2, 1)
+                audio_data['channels'] = 2
+        else:
+            # Versione CPU con numpy
+            samples = audio_data['array']
+            if samples.shape[0] == 1:  # È mono
+                audio_data['array'] = np.repeat(samples, 2, axis=0)
+                audio_data['channels'] = 2
+
+        return audio_data
+    except Exception as e:
+        print(f"Errore durante la conversione in stereo: {e}")
+        return None
+
+
+def extract_mixture(mp4_path, temp_dir):
+    """Estrae la traccia mixture da un file MP4 usando ffmpeg."""
+    try:
+        output_path = os.path.join(temp_dir, f"{os.path.splitext(os.path.basename(mp4_path))[0]}_mixture.wav")
+
+        # Comando ffmpeg per estrarre la prima traccia audio
+        command = [
+            'ffmpeg',
+            '-i', mp4_path,
+            '-map', '0:a:0',  # Prima traccia audio
+            '-acodec', 'pcm_s16le',  # Output WAV
+            '-y',  # Sovrascrivi se esiste
+            output_path
+        ]
+
+        subprocess.run(command, check=True, capture_output=True)
+
+        if os.path.exists(output_path):
+            return output_path
+        return None
+    except Exception as e:
+        print(f"Errore durante l'estrazione della traccia mixture: {e}")
+        return None
+
+
+def fix_path_separators(path):
+    """Corregge i separatori di percorso in base al sistema operativo."""
+    if os.name == 'nt':  # Windows
+        return path.replace('/', '\\')
+    else:  # Unix/Linux/Mac
+        return path.replace('\\', '/')
+
 
 def main():
-    # Configurazione argparse
-    parser = argparse.ArgumentParser(description="Sovrapponi file audio di rumore a file audio di canzoni")
-    parser.add_argument("path_canzoni", help="Percorso del file o directory delle canzoni")
-    parser.add_argument("path_rumori", help="Percorso del file o directory dei rumori")
-    parser.add_argument("--formato_output", choices=["aac"], default="aac",
-                      help="Formato del file di output (solo AAC supportato)")
-    parser.add_argument("--volume_rumore_db", type=float, default=0.0,
-                      help="Aggiustamento del volume dei rumori in dB (default: 0.0)")
-    parser.add_argument("--debug", action="store_true", help="Attiva modalità debug")
-    
+    # Parsing degli argomenti
+    parser = argparse.ArgumentParser(description='Script per sovrapporre file audio di rumore a file audio di canzoni.')
+    parser.add_argument('--path-canzoni', type=str, default=SONGS_DIR,
+                        help='Percorso alla directory contenente i file audio delle canzoni (MP4).')
+    parser.add_argument('--path-rumori', type=str, default=NOISE_DIR,
+                        help='Percorso alla directory contenente i file audio di rumore (WAV).')
+    parser.add_argument('--iter-songs', type=int, default=ITER_SONGS,
+                        help=f'Numero di canzoni da processare (default: {ITER_SONGS}).')
+    parser.add_argument('--iter-noise', type=int, default=ITER_NOISE,
+                        help=f'Numero di coppie di rumori per canzone (default: {ITER_NOISE}).')
+    parser.add_argument('--use-cuda', action='store_true', help='Utilizza CUDA/GPU se disponibile.')
+    parser.add_argument('--input-dir', type=str, default=INPUT_DIR, help='Directory di output per i file INPUT.')
+    parser.add_argument('--target-dir', type=str, default=TARGET_DIR, help='Directory di output per i file TARGET.')
     args = parser.parse_args()
-    
-    # Ottimizzazione PyTorch
-    torch.backends.cudnn.benchmark = True  # Aumenta performance per operazioni ripetitive
-    
-    # Output debugging iniziale
-    print("\n=========== INFO SISTEMA ===========")
-    print(f"Directory corrente: {os.getcwd()}")
-    print(f"PyTorch: {torch.__version__}")
-    
-    # Determina se usare CUDA o CPU e configura per massime prestazioni
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
-    if device.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"CUDA: {torch.version.cuda}")
-        # Ottimizzazione: aumenta memoria cache
-        torch.cuda.empty_cache()
-    print("=====================================\n")
-    
-    # Verifica che FFmpeg sia disponibile
-    if not verify_ffmpeg():
-        print("ERRORE: FFmpeg non disponibile. L'applicazione non può continuare.")
+
+    # Correggi i percorsi per il sistema operativo corrente
+    args.path_canzoni = fix_path_separators(args.path_canzoni)
+    args.path_rumori = fix_path_separators(args.path_rumori)
+    args.input_dir = fix_path_separators(args.input_dir)
+    args.target_dir = fix_path_separators(args.target_dir)
+
+    # Verifica dell'esistenza delle directory
+    if not os.path.isdir(args.path_canzoni):
+        print(f"Errore: La directory delle canzoni '{args.path_canzoni}' non esiste.")
         sys.exit(1)
-    
-    # Directory di output
-    output_dir = os.path.join(os.getcwd(), "db_merged")
-    
-    # Pulisci o crea la directory di output
-    clean_output_directory(output_dir)
-    
-    # Processa il percorso delle canzoni
-    print(f"\n=========== FILE CANZONI ===========")
-    print(f"Percorso canzoni: {args.path_canzoni}")
-    
-    song_files = []
-    if os.path.isdir(args.path_canzoni):
-        for filename in os.listdir(args.path_canzoni):
-            filepath = os.path.join(args.path_canzoni, filename)
-            if os.path.isfile(filepath) and is_audio_file(filepath):
-                basename = os.path.splitext(os.path.basename(filepath))[0]
-                if "_mixture" in basename:
-                    song_files.append(filepath)
-    elif os.path.isfile(args.path_canzoni) and is_audio_file(args.path_canzoni):
-        basename = os.path.splitext(os.path.basename(args.path_canzoni))[0]
-        if "_mixture" in basename:
-            song_files.append(args.path_canzoni)
-    
-    print(f"Trovati {len(song_files)} file canzone validi")
-    
-    # Processa il percorso dei rumori
-    print(f"\n=========== FILE RUMORI ===========")
-    print(f"Percorso rumori: {args.path_rumori}")
-    
-    noise_files = []
-    if os.path.isdir(args.path_rumori):
-        for filename in os.listdir(args.path_rumori):
-            filepath = os.path.join(args.path_rumori, filename)
-            if os.path.isfile(filepath) and is_audio_file(filepath):
-                basename = os.path.splitext(os.path.basename(filepath))[0]
-                if "_zeromean" in basename:
-                    noise_files.append(filepath)
-    elif os.path.isfile(args.path_rumori) and is_audio_file(args.path_rumori):
-        basename = os.path.splitext(os.path.basename(args.path_rumori))[0]
-        if "_zeromean" in basename:
-            noise_files.append(args.path_rumori)
-    
-    print(f"Trovati {len(noise_files)} file rumore validi")
-    print("=====================================\n")
-    
-    if not song_files:
-        print("Nessun file canzone valido trovato. Uscita.")
-        return
-    
-    if not noise_files:
-        print("Nessun file rumore valido trovato. Uscita.")
-        return
-    
-    # Utilizziamo sempre AAC come formato di output
-    format_settings = {
-        "format": "mp4", 
-        "codec": "aac", 
-        "bits_per_sample": 16, 
-        "compression": -2
-    }
-    
-    # Processa ogni canzone con ogni rumore
-    processed_count = 0
-    error_count = 0
-    
-    # Precarica i rumori per efficienza se possibile
-    noise_cache = {}
-    if len(noise_files) < 5:  # Cache solo se abbiamo pochi file di rumore
-        print("Precaricamento rumori per ottimizzazione...")
-        for noise_path in noise_files:
-            try:
-                noise_waveform, noise_sample_rate = load_audio(noise_path, device)
-                noise_basename = os.path.splitext(os.path.basename(noise_path))[0]
-                noise_clean_name = noise_basename.replace("_zeromean", "")
-                noise_cache[noise_path] = (noise_waveform, noise_sample_rate, noise_clean_name)
-                print(f"  ✓ Caricato {noise_clean_name}")
-            except Exception as e:
-                print(f"  ✗ Impossibile precaricare {os.path.basename(noise_path)}: {e}")
-    
-    # Utilizzo batch per sfruttare parallelismo GPU
-    batch_size = 1  # Aumentalo se hai abbastanza VRAM
-    
-    for song_idx in range(0, len(song_files), batch_size):
-        song_batch = song_files[song_idx:song_idx + batch_size]
-        
-        for song_path in song_batch:
-            song_basename = os.path.splitext(os.path.basename(song_path))[0]
-            song_clean_name = song_basename.replace(".stem_mixture", "")
-            
-            print(f"\n=========== PROCESSING {song_clean_name} ===========")
-            
-            try:
-                # Carica la canzone con supporto GPU
-                song_waveform, song_sample_rate = load_audio(song_path, device)
-                
-                # Converti a stereo per AAC
-                if song_waveform.shape[0] == 1:
-                    song_waveform = convert_to_stereo(song_waveform)
-                elif song_waveform.shape[0] > 2:
-                    song_waveform = song_waveform[:2]  # Limita a stereo
-                
-                song_length = song_waveform.shape[1]
-                
-                for noise_path in noise_files:
-                    start_time = time.time()
-                    
-                    # Usa cache se disponibile
-                    if noise_path in noise_cache:
-                        noise_waveform, noise_sample_rate, noise_clean_name = noise_cache[noise_path]
-                        print(f"\nElaborazione di '{song_clean_name}' con rumore '{noise_clean_name}' (cached)...")
-                    else:
-                        noise_basename = os.path.splitext(os.path.basename(noise_path))[0]
-                        noise_clean_name = noise_basename.replace("_zeromean", "")
-                        print(f"\nElaborazione di '{song_clean_name}' con rumore '{noise_clean_name}'...")
-                        
-                        # Carica il rumore con supporto GPU
-                        noise_waveform, noise_sample_rate = load_audio(noise_path, device)
-                    
-                    try:
-                        # Clone per evitare modifiche ai dati in cache
-                        if noise_path in noise_cache:
-                            noise_waveform = noise_waveform.clone()
-                        
-                        # Normalizza il rumore
-                        noise_waveform = normalize_audio(noise_waveform)
-                        
-                        # Applica volume
-                        if args.volume_rumore_db != 0:
-                            noise_waveform = adjust_volume(noise_waveform, args.volume_rumore_db)
-                        
-                        # Ricampiona
-                        if noise_sample_rate != song_sample_rate:
-                            noise_waveform = resample_if_needed(noise_waveform, noise_sample_rate, song_sample_rate)
-                        
-                        # Adatta durata
-                        noise_waveform = loop_or_truncate(noise_waveform, song_sample_rate, song_length, song_sample_rate)
-                        
-                        # Garantisci compatibilità canali
-                        if noise_waveform.shape[0] == 1 and song_waveform.shape[0] == 2:
-                            noise_waveform = convert_to_stereo(noise_waveform)
-                        elif noise_waveform.shape[0] == 2 and song_waveform.shape[0] == 1:
-                            # Converti entrambi a stereo per AAC
-                            song_waveform = convert_to_stereo(song_waveform)
-                        
-                        # Sovrapponi audio (in parallelo su GPU se disponibile)
-                        merged_waveform = song_waveform + noise_waveform
-                        
-                        # Normalizza
-                        merged_waveform = normalize_audio(merged_waveform)
-                        
-                        # Nome file output
-                        output_filename = f"[{noise_clean_name}] {song_clean_name}.m4a"
-                        output_path = os.path.join(output_dir, output_filename)
-                        
-                        # Salva AAC ad alta qualità
-                        save_audio(
-                            merged_waveform,
-                            song_sample_rate,
-                            output_path,
-                            format_settings
-                        )
-                        
-                        processing_time = time.time() - start_time
-                        print(f"✓ File salvato: {output_filename}")
-                        print(f"  Tempo: {processing_time:.2f}s")
-                        processed_count += 1
-                        
-                        # Libera memoria GPU se necessario
-                        if device.type == "cuda" and not noise_path in noise_cache:
-                            del noise_waveform
-                            torch.cuda.empty_cache()
-                        
-                    except Exception as e:
-                        print(f"✗ Errore con rumore '{noise_path}': {str(e)}")
-                        error_count += 1
-                        continue
-                
-                # Libera memoria GPU
-                if device.type == "cuda":
-                    del song_waveform
-                    torch.cuda.empty_cache()
-                    
-            except Exception as e:
-                print(f"✗ Errore con canzone '{song_path}': {str(e)}")
-                error_count += 1
+
+    if not os.path.isdir(args.path_rumori):
+        print(f"Errore: La directory dei rumori '{args.path_rumori}' non esiste.")
+        sys.exit(1)
+
+    # Verifica della presenza di ffmpeg
+    if not verify_ffmpeg():
+        print("Errore: FFmpeg non disponibile. Impossibile continuare.")
+        sys.exit(1)
+
+    # Verifica dell'uso di CUDA
+    use_cuda = args.use_cuda and torch.cuda.is_available()
+    if args.use_cuda:
+        if use_cuda:
+            print("INFO: CUDA è disponibile e verrà utilizzato per l'elaborazione.")
+        else:
+            print("AVVISO: CUDA richiesto ma non disponibile. Verrà utilizzata la CPU.")
+
+    # Creazione delle directory di output
+    input_dir = args.input_dir
+    target_dir = args.target_dir
+    temp_dir = os.path.join(os.getcwd(), "temp")
+
+    for dir_path in [input_dir, target_dir, temp_dir]:
+        if not clean_directory(dir_path):
+            print(f"Errore: Impossibile creare/pulire la directory '{dir_path}'.")
+            sys.exit(1)
+
+    # Trova i file nelle directory
+    print("Ricerca dei file di canzoni e rumori...")
+
+    # Lista dei file delle canzoni
+    canzoni_files = [os.path.join(args.path_canzoni, f) for f in os.listdir(args.path_canzoni)
+                     if is_audio_file(os.path.join(args.path_canzoni, f))]
+    if not canzoni_files:
+        print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_canzoni}'.")
+        sys.exit(1)
+
+    # Liste dei file di rumore per ogni fold
+    folds = [f"fold{i}" for i in range(1, 11)]
+    rumori_per_fold = {}
+
+    for fold in folds:
+        fold_path = os.path.join(args.path_rumori, fold)
+        if os.path.isdir(fold_path):
+            rumori_per_fold[fold] = [os.path.join(fold_path, f) for f in os.listdir(fold_path)
+                                     if is_audio_file(os.path.join(fold_path, f))]
+            print(f"Trovati {len(rumori_per_fold[fold])} file di rumore in {fold}")
+
+    # Verifica la presenza di file di rumore
+    if not any(rumori_per_fold.values()):
+        print(f"Errore: Nessun file audio di rumore trovato nelle sottocartelle fold* di '{args.path_rumori}'.")
+        sys.exit(1)
+
+    # Ciclo principale di elaborazione
+    songs_processed = 1
+    last_song_path = None
+
+    # Ciclo esterno (Canzoni)
+    rand_iter_songs = random.randint(1, args.iter_songs) if args.iter_songs > 1 else 1
+    print(f"\nAvvio elaborazione di {rand_iter_songs} canzoni...")
+
+    while songs_processed <= rand_iter_songs:
+        # Seleziona una canzone casuale diversa dalla precedente
+        while True:
+            song_path = random.choice(canzoni_files)
+            if song_path != last_song_path or len(canzoni_files) == 1:
+                break
+
+        last_song_path = song_path
+        song_name = os.path.splitext(os.path.basename(song_path))[0]
+        print(f"\n--- Elaborazione canzone {songs_processed}/{rand_iter_songs}: {song_name} ---")
+
+        # Estrai la traccia mixture per le canzoni MP4
+        if song_path.lower().endswith('.mp4'):
+            print(f"Estrazione della traccia mixture da {song_name}...")
+            extracted_path = extract_mixture(song_path, temp_dir)
+            if not extracted_path:
+                print(
+                    f"Errore: Impossibile estrarre la traccia mixture da {song_path}. Passaggio alla canzone successiva.")
                 continue
-    
-    print("\n=========== RIEPILOGO ===========")
-    print(f"File elaborati con successo: {processed_count}")
-    print(f"Errori incontrati: {error_count}")
-    print(f"Directory di output: {output_dir}")
-    print("=================================")
+            song_path = extracted_path
+            song_name = os.path.splitext(os.path.basename(song_path))[0].replace('.stem_mixture', '')
+
+        # Carica la canzone
+        print(f"Caricamento della canzone: {song_name}...")
+        song_data = load_audio(song_path, use_cuda)
+        if song_data is None:
+            print(f"Errore: Impossibile caricare il file {song_path}. Passaggio alla canzone successiva.")
+            continue
+
+        # Verifica che la canzone sia in stereo o convertila
+        song_data = convert_to_stereo(song_data)
+
+        # Ottieni la lunghezza della canzone
+        song_length = song_data['tensor'].shape[1] if use_cuda else song_data['array'].shape[1]
+
+        # Ciclo interno (Rumori)
+        noise_pairs_processed = 1
+        last_noise_pair = None
+
+        rand_iter_noise = random.randint(1, args.iter_noise) if args.iter_noise > 1 else 1
+        print(f"Generazione di {rand_iter_noise} coppie di rumori per questa canzone...")
+
+        while noise_pairs_processed <= rand_iter_noise:
+            # Seleziona due fold casuali diversi
+            available_folds = [fold for fold in rumori_per_fold.keys() if rumori_per_fold[fold]]
+            if len(available_folds) < 2:
+                print("Errore: Non ci sono abbastanza fold con file di rumore. Impossibile continuare.")
+                sys.exit(1)
+
+            fold1, fold2 = random.sample(available_folds, 2)
+
+            # Seleziona un rumore casuale da ciascun fold
+            noise1_path = random.choice(rumori_per_fold[fold1])
+            noise2_path = random.choice(rumori_per_fold[fold2])
+
+            # Verifica che la coppia di rumori sia diversa dalla precedente
+            current_noise_pair = (noise1_path, noise2_path)
+            if current_noise_pair == last_noise_pair and noise_pairs_processed > 0:
+                continue
+
+            last_noise_pair = current_noise_pair
+
+            noise1_name = os.path.splitext(os.path.basename(noise1_path))[0]
+            noise2_name = os.path.splitext(os.path.basename(noise2_path))[0]
+
+            print(f"\n  Coppia di rumori {noise_pairs_processed}/{rand_iter_noise} "
+                  f"(canzone {songs_processed}/{rand_iter_songs}):")
+            print(f"  - Rumore 1: {noise1_name} (da {fold1})")
+            print(f"  - Rumore 2: {noise2_name} (da {fold2})")
+
+            # Carica i rumori
+            print(f"  Caricamento del rumore 1: {noise1_path}")
+            noise1_data = load_audio(noise1_path, use_cuda)
+            if noise1_data is None:
+                print(f"  Errore: Impossibile caricare il rumore 1. Tentativo con un altro rumore.")
+                continue
+
+            print(f"  Caricamento del rumore 2: {noise2_path}")
+            noise2_data = load_audio(noise2_path, use_cuda)
+            if noise2_data is None:
+                print(f"  Errore: Impossibile caricare il rumore 2. Tentativo con un altro rumore.")
+                continue
+
+            # Verifica che i rumori siano in stereo o convertili
+            noise1_data = convert_to_stereo(noise1_data)
+            noise2_data = convert_to_stereo(noise2_data)
+
+            # Azzera la media dei rumori
+            noise1_data = make_audio_zero_mean(noise1_data)
+            noise2_data = make_audio_zero_mean(noise2_data)
+
+            if noise1_data is None or noise2_data is None:
+                print(
+                    "  Errore: Impossibile azzerare la media di uno o entrambi i rumori. Passaggio alla coppia successiva.")
+                continue
+
+            # Adatta la lunghezza dei rumori alla canzone
+            noise1_data = loop_or_truncate(noise1_data, song_length)
+            noise2_data = loop_or_truncate(noise2_data, song_length)
+
+            if noise1_data is None or noise2_data is None:
+                print(
+                    "  Errore: Impossibile adattare la lunghezza di uno o entrambi i rumori. Passaggio alla coppia successiva.")
+                continue
+
+            # Sovrapponi i rumori alla canzone
+            if use_cuda:
+                # Versione CUDA
+                input_samples = song_data['tensor'] + noise1_data['tensor']
+                target_samples = song_data['tensor'] + noise2_data['tensor']
+
+                input_audio = {
+                    'tensor': input_samples,
+                    'sample_rate': song_data['sample_rate'],
+                    'channels': song_data['channels'],
+                    'sample_width': song_data['sample_width'],
+                    'cuda': True
+                }
+
+                target_audio = {
+                    'tensor': target_samples,
+                    'sample_rate': song_data['sample_rate'],
+                    'channels': song_data['channels'],
+                    'sample_width': song_data['sample_width'],
+                    'cuda': True
+                }
+            else:
+                # Versione CPU
+                input_samples = song_data['array'] + noise1_data['array']
+                target_samples = song_data['array'] + noise2_data['array']
+
+                input_audio = {
+                    'array': input_samples,
+                    'sample_rate': song_data['sample_rate'],
+                    'channels': song_data['channels'],
+                    'sample_width': song_data['sample_width'],
+                    'cuda': False
+                }
+
+                target_audio = {
+                    'array': target_samples,
+                    'sample_rate': song_data['sample_rate'],
+                    'channels': song_data['channels'],
+                    'sample_width': song_data['sample_width'],
+                    'cuda': False
+                }
+
+            # Crea i nomi dei file di output
+            noise1_base_name = noise1_name.replace(' ', '_').strip('-')
+            noise2_base_name = noise2_name.replace(' ', '_').strip('-')
+            song_base_name = song_name.replace(' ', '').strip('-')
+
+            input_filename = f"INPUT-S{songs_processed}N{noise_pairs_processed}-[{noise1_base_name}]-[{song_base_name}].wav"
+            target_filename = f"TARGET-S{songs_processed}N{noise_pairs_processed}-[{noise2_base_name}]-[{song_base_name}].wav"
+
+            input_path = os.path.join(input_dir, input_filename)
+            target_path = os.path.join(target_dir, target_filename)
+
+            # Salva i file di output
+            print(f"  Salvataggio dei file di output...")
+
+            if save_audio(input_audio, input_path) and save_audio(target_audio, target_path):
+                print(f"  File salvati con successo:\n    - {input_filename}\n    - {target_filename}")
+                noise_pairs_processed += 1
+            else:
+                print("  Errore durante il salvataggio dei file. Passaggio alla coppia successiva.")
+
+        # Incrementa il contatore delle canzoni processate
+        songs_processed += 1
+
+    # Pulizia della directory temporanea
+    try:
+        shutil.rmtree(temp_dir)
+        print(f"\nDirectory temporanea '{temp_dir}' rimossa.")
+    except Exception as e:
+        print(f"\nAvviso: Impossibile rimuovere la directory temporanea '{temp_dir}': {e}")
+
+    print("\nElaborazione completata con successo!")
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"\n✗ ERRORE CRITICO: {str(e)}")
-        print("\nTraceback completo:")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    main()
