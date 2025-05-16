@@ -1,32 +1,130 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import sys
 import argparse
+import os
 import random
-import numpy as np
-from pathlib import Path
-import subprocess
+import re
 import shutil
+import subprocess
+import sys
 import traceback
-from pydub import AudioSegment, effects
-import torch  # Make sure torch is imported globally so it's accessible in all functions
 import wave
+
+import numpy as np
 import soundfile as sf
-from slugify import slugify
-    
-    
+import torch  # Make sure torch is imported globally so it's accessible in all functions
+import unicodedata
+from pydub import AudioSegment
+
 # Costanti globali
+
+### MODIFICARE QUESTI PER TRAIN/TEST ###
 IS_TRAINING = False
-ITER_SONGS = 10  # Numero di canzoni da processare
-ITER_NOISE = 10  # Numero di coppie di rumori per canzone
+
+ITER_SONGS_MIN = 1  # Numero MINIMO di canzoni da processare
+ITER_SONGS_MAX = 3  # Numero MASSIMO di canzoni da processare
+
+ITER_NOISE_MIN = 1  # Numero MINIMO di coppie di rumori per canzone
+ITER_NOISE_MAX = 10 # Numero MASSIMO di coppie di rumori per canzone
+### -------------------------------- ###
+
 # INPUT_DIR = "I:\\Il mio Drive\\dataset\\train\\input" if IS_TRAINING else "I:\\Il mio Drive\\dataset\\test\\input"
 # TARGET_DIR = "I:\\Il mio Drive\\dataset\\train\\target" if IS_TRAINING else "I:\\Il mio Drive\\dataset\\test\\target"
 INPUT_DIR = ".\\dataset\\train\\input" if IS_TRAINING else ".\\dataset\\test\\input"
 TARGET_DIR = ".\\dataset\\train\\target" if IS_TRAINING else ".\\dataset\\test\\target"
 SONGS_DIR = ".\\musdb18\\train" if IS_TRAINING else ".\\musdb18\\test"
 NOISE_DIR = ".\\UrbanSound8K\\audio"
+
+
+def slugify(text):
+    """
+    Converte un testo in uno slug URL-friendly.
+    """
+    # Converte in unicode se necessario
+    if not isinstance(text, str):
+        text = str(text)
+
+    # Converte in ASCII
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+
+    # Converte in minuscolo e rimuove caratteri non desiderati
+    text = re.sub(r'[^\w\s-]', '', text.lower())
+
+    # Sostituisce gli spazi con trattini
+    text = re.sub(r'[-\s]+', '-', text).strip('-_')
+
+    return text
+
+
+def log_generation_stats(is_training, num_pairs, parent_dir):
+    """
+    Registra le statistiche di generazione in un file di log.
+
+    Args:
+        is_training (bool): True se è una sessione di TRAIN, False se è TEST
+        num_pairs (int): Numero di coppie generate
+        parent_dir (str): Directory principale del dataset
+    """
+    import os
+    import datetime
+    from pathlib import Path
+
+    # Determina la directory padre che contiene le cartelle train e test
+    log_file = os.path.join(parent_dir, "log.txt")
+
+    # Calcola lo spazio occupato
+    input_size = 0
+    target_size = 0
+    input_files = 0
+    target_files = 0
+
+    if is_training:
+        session_type = "TRAIN"
+        input_dir = os.path.join(parent_dir, "train", "input")
+        target_dir = os.path.join(parent_dir, "train", "target")
+    else:
+        session_type = "TEST"
+        input_dir = os.path.join(parent_dir, "test", "input")
+        target_dir = os.path.join(parent_dir, "test", "target")
+
+    # Calcola la dimensione totale delle cartelle e conta i file
+    if os.path.exists(input_dir):
+        for dirpath, dirnames, filenames in os.walk(input_dir):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                input_size += os.path.getsize(fp)
+                input_files += 1
+
+    if os.path.exists(target_dir):
+        for dirpath, dirnames, filenames in os.walk(target_dir):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                target_size += os.path.getsize(fp)
+                target_files += 1
+
+    total_size = input_size + target_size
+    total_size_mb = total_size / (1024 * 1024)  # Conversione in MB
+    total_files = input_files + target_files
+
+    # Ottieni la data odierna
+    current_date = datetime.datetime.now().strftime("%d/%m/%Y")
+
+    # Crea il messaggio di log
+    log_message = f"""--- DATASET for {session_type} - {current_date} ---
+
+    Generated pairs: {num_pairs}
+    Generated files: {total_files}
+    Output size: {total_size_mb:.2f} MB
+---
+
+"""
+
+    # Scrivi nel file di log (append)
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(log_message)
+
+    print(f"Log scritto in: {log_file}")
 
 
 def clean_directory(dir_path):
@@ -543,10 +641,10 @@ def main():
                         help='Percorso alla directory contenente i file audio delle canzoni (MP4).')
     parser.add_argument('--path-rumori', type=str, default=NOISE_DIR,
                         help='Percorso alla directory contenente i file audio di rumore (WAV).')
-    parser.add_argument('--iter-songs', type=int, default=ITER_SONGS,
-                        help=f'Numero di canzoni da processare (default: {ITER_SONGS}).')
-    parser.add_argument('--iter-noise', type=int, default=ITER_NOISE,
-                        help=f'Numero di coppie di rumori per canzone (default: {ITER_NOISE}).')
+    parser.add_argument('--iter-songs', type=int, default=ITER_SONGS_MAX,
+                        help=f'Numero di canzoni da processare (default: {ITER_SONGS_MAX}).')
+    parser.add_argument('--iter-noise', type=int, default=ITER_NOISE_MAX,
+                        help=f'Numero di coppie di rumori per canzone (default: {ITER_NOISE_MAX}).')
     parser.add_argument('--use-cuda', action='store_true', help='Utilizza CUDA/GPU se disponibile.')
     parser.add_argument('--input-dir', type=str, default=INPUT_DIR, help='Directory di output per i file INPUT.')
     parser.add_argument('--target-dir', type=str, default=TARGET_DIR, help='Directory di output per i file TARGET.')
@@ -624,11 +722,11 @@ def main():
     last_song_path = None
 
     # Ciclo esterno (Canzoni)
-    rand_iter_songs = np.random.randint(1, args.iter_songs + 1) if args.iter_songs > 1 else 1
+    rand_iter_songs = np.random.randint(ITER_SONGS_MIN, ITER_SONGS_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_SONGS_MAX else 1
     rand_iter_noises = np.zeros(rand_iter_songs)
     
     for i in range(rand_iter_songs):
-        rand_iter_noises[i] = np.random.randint(1, args.iter_noise + 1) if args.iter_noise > 1 else 1
+        rand_iter_noises[i] = np.random.randint(ITER_NOISE_MIN, ITER_NOISE_MIN + 1) if 1 <= ITER_SONGS_MIN < ITER_NOISE_MAX else 1
         
     print(f"\nAvvio elaborazione di {rand_iter_songs} canzoni...")
 
@@ -681,6 +779,7 @@ def main():
 
         while noise_pairs_processed <= rand_iter_noise:
             # Per la modalità test, basta un solo rumore
+            noise2_path = noise2_data = noise2_name = None
             if IS_TRAINING:
                 # Modalità train: seleziona due fold casuali diversi
                 available_folds = [fold for fold in rumori_per_fold.keys() if rumori_per_fold[fold]]
@@ -871,8 +970,9 @@ def main():
         print(f"\nAvviso: Impossibile rimuovere la directory temporanea '{temp_dir}': {e}")
 
     print("\nElaborazione completata con successo!")
-    print(f"Totale coppie generate: {generated_pairs}")
-    
+    parent_dir = os.path.dirname(os.path.dirname(INPUT_DIR))  # Ottiene la directory padre che contiene train/test
+    log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)
+
 
 if __name__ == "__main__":
     main()
