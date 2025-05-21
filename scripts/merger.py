@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import zipfile
 import argparse
 import os
 import random
@@ -20,13 +21,13 @@ from pydub import AudioSegment
 # Costanti globali
 
 ### MODIFICARE QUESTI PER TRAIN/TEST ###
-IS_TRAINING = False
+IS_TRAINING = True
 
-ITER_SONGS_MIN = 1  # Numero MINIMO di canzoni da processare
-ITER_SONGS_MAX = 3  # Numero MASSIMO di canzoni da processare
+ITER_SONGS_MIN = 10 if IS_TRAINING else 4        # Numero MINIMO di canzoni da processare
+ITER_SONGS_MAX = 20 if IS_TRAINING else 8       # Numero MASSIMO di canzoni da processare
 
-ITER_NOISE_MIN = 1  # Numero MINIMO di coppie di rumori per canzone
-ITER_NOISE_MAX = 10 # Numero MASSIMO di coppie di rumori per canzone
+ITER_NOISE_MIN = 25 if IS_TRAINING else 10       # Numero MINIMO di coppie di rumori per canzone
+ITER_NOISE_MAX = 50 if IS_TRAINING else 20      # Numero MASSIMO di coppie di rumori per canzone
 ### -------------------------------- ###
 
 # INPUT_DIR = "I:\\Il mio Drive\\dataset\\train\\input" if IS_TRAINING else "I:\\Il mio Drive\\dataset\\test\\input"
@@ -35,6 +36,41 @@ INPUT_DIR = ".\\dataset\\train\\input" if IS_TRAINING else ".\\dataset\\test\\in
 TARGET_DIR = ".\\dataset\\train\\target" if IS_TRAINING else ".\\dataset\\test\\target"
 SONGS_DIR = ".\\musdb18\\train" if IS_TRAINING else ".\\musdb18\\test"
 NOISE_DIR = ".\\UrbanSound8K\\audio"
+
+
+# def compress_folders_to_zip(input_dir, target_dir, is_training):
+#     """
+#     Comprime le cartelle input e target in un file zip.
+#
+#     Args:
+#         input_dir (str): Percorso della cartella input.
+#         target_dir (str): Percorso della cartella target.
+#         is_training (bool): True se è una sessione di training, False se è una sessione di test.
+#     """
+#     print("Generando i file zip...")
+#     # Determina il nome del file zip in base al tipo di sessione
+#     zip_filename = "train_kaggle.zip" if is_training else "test_kaggle.zip"
+#     zip_path = os.path.join('.\\', zip_filename)
+#
+#     # Crea il file zip
+#     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+#         # Aggiungi tutti i file dalla cartella input
+#         for root, dirs, files in os.walk(input_dir):
+#             for file in files:
+#                 file_path = os.path.join(root, file)
+#                 # Salva il percorso relativo nel file zip
+#                 arcname = os.path.relpath(file_path, os.path.dirname(input_dir))
+#                 zipf.write(file_path, arcname)
+#
+#         # Aggiungi tutti i file dalla cartella target
+#         for root, dirs, files in os.walk(target_dir):
+#             for file in files:
+#                 file_path = os.path.join(root, file)
+#                 # Salva il percorso relativo nel file zip
+#                 arcname = os.path.relpath(file_path, os.path.dirname(target_dir))
+#                 zipf.write(file_path, arcname)
+#
+#     print(f"Le cartelle sono state compresse in {zip_path}")
 
 
 def slugify(text):
@@ -317,8 +353,10 @@ def load_audio(file_path, use_cuda=False):
 
 def normalize_db(noise_data, clean_data):
     """
-    Normalizes noise data relative to clean data with a random SNR between 0 and 10 dB.
+    Normalizes noise data relative to clean data with a more intelligent SNR approach.
     Works with both numpy arrays and PyTorch tensors.
+    Uses a better range of SNR values (6-15 dB) to ensure the noise doesn't overpower
+    the music but remains audible.
     Returns the adjusted noise_data.
     """
     try:
@@ -326,59 +364,128 @@ def normalize_db(noise_data, clean_data):
         if noise_data is None:
             print("  Error: noise_data is None in normalize_db function")
             return None
-            
+
         # Ensure clean_data is not None
         if clean_data is None:
             print("  Error: clean_data is None in normalize_db function")
             return None
-            
+
         # Extract data arrays or tensors based on whether they're on CUDA or not
         if noise_data.get('cuda', False):
             # CUDA version with PyTorch
             noise_samples = noise_data['tensor']
             clean_samples = clean_data['tensor']
-            
-            # Calculate power of clean signal
-            clean_power = torch.mean(clean_samples.float() ** 2)
-            
-            # Calculate power of noise
-            noise_power = torch.mean(noise_samples.float() ** 2)
-            
-            # Generate random SNR between 0 and 10 dB (inclusive)
-            target_snr = torch.randint(0, 11, (1,))
-            
+
+            # Calculate RMS of clean signal (more perceptually relevant than power)
+            clean_rms = torch.sqrt(torch.mean(clean_samples.float() ** 2))
+
+            # Calculate RMS of noise
+            noise_rms = torch.sqrt(torch.mean(noise_samples.float() ** 2))
+
+            # Analyze the dynamic range of the clean signal
+            if clean_samples.shape[1] > 0:  # Ensure we have samples
+                # Divide signal into chunks and get per-chunk RMS
+                chunk_size = min(44100, clean_samples.shape[1])  # 1-second chunks at 44.1 kHz
+                num_chunks = max(1, clean_samples.shape[1] // chunk_size)
+                chunks_rms = []
+
+                for i in range(num_chunks):
+                    start = i * chunk_size
+                    end = min(start + chunk_size, clean_samples.shape[1])
+                    chunk = clean_samples[:, start:end]
+                    chunk_rms = torch.sqrt(torch.mean(chunk.float() ** 2))
+                    chunks_rms.append(chunk_rms.item())
+
+                # Calculate dynamic range - use this to adjust SNR intelligently
+                dynamic_range = max(chunks_rms) / (min(chunks_rms) + 1e-10)
+
+                # If song has high dynamic range, use higher SNR to make noise less intrusive
+                # in quiet passages, while still audible in louder parts
+                min_snr = 7
+                max_snr = 14
+
+                # Adjust SNR range based on dynamic range
+                if dynamic_range > 10:  # Very dynamic song
+                    min_snr = 9
+                    max_snr = 20
+                elif dynamic_range < 3:  # Not very dynamic song
+                    min_snr = 7
+                    max_snr = 13
+            else:
+                # Default values if we can't analyze chunks
+                min_snr = 7
+                max_snr = 14
+
+            # Generate random SNR within our calculated range
+            target_snr = min_snr + torch.rand(1).item() * (max_snr - min_snr)
+
             # Calculate the scaling factor for noise based on the desired SNR
-            # SNR = 10 * log10(clean_power / noise_power)
-            # So: noise_power_new = clean_power / (10^(SNR/10))
-            import math
-            scaling_factor = torch.sqrt(clean_power / (noise_power * (10 ** (target_snr.float() / 10))))
-            
+            # SNR = 20 * log10(clean_rms / noise_rms)  # Using RMS for better perceptual results
+            # So: noise_rms_new = clean_rms / (10^(SNR/20))
+            scaling_factor = clean_rms / (noise_rms * (10 ** (target_snr / 20)))
+
             # Scale the noise
             noise_data['tensor'] = noise_samples * scaling_factor
-            
+
         else:
             # CPU version with numpy
             noise_samples = noise_data['array']
             clean_samples = clean_data['array']
-            
-            # Calculate power of clean signal
-            clean_power = np.mean(clean_samples ** 2)
-            
-            # Calculate power of noise
-            noise_power = np.mean(noise_samples ** 2)
-            
-            # Generate random SNR between 0 and 10 dB (inclusive)
-            target_snr = np.random.randint(0, 11)
-            
+
+            # Calculate RMS of clean signal (more perceptually relevant than power)
+            clean_rms = np.sqrt(np.mean(clean_samples ** 2))
+
+            # Calculate RMS of noise
+            noise_rms = np.sqrt(np.mean(noise_samples ** 2))
+
+            # Analyze the dynamic range of the clean signal
+            if clean_samples.shape[1] > 0:  # Ensure we have samples
+                # Divide signal into chunks and get per-chunk RMS
+                chunk_size = min(44100, clean_samples.shape[1])  # 1-second chunks at 44.1 kHz
+                num_chunks = max(1, clean_samples.shape[1] // chunk_size)
+                chunks_rms = []
+
+                for i in range(num_chunks):
+                    start = i * chunk_size
+                    end = min(start + chunk_size, clean_samples.shape[1])
+                    chunk = clean_samples[:, start:end]
+                    chunk_rms = np.sqrt(np.mean(chunk ** 2))
+                    chunks_rms.append(chunk_rms)
+
+                # Calculate dynamic range - use this to adjust SNR intelligently
+                dynamic_range = max(chunks_rms) / (min(chunks_rms) + 1e-10)
+
+                # If song has high dynamic range, use higher SNR to make noise less intrusive
+                # in quiet passages, while still audible in louder parts
+                min_snr = 7
+                max_snr = 14
+
+                # Adjust SNR range based on dynamic range
+                if dynamic_range > 10:  # Very dynamic song
+                    min_snr = 9
+                    max_snr = 20
+                elif dynamic_range < 3:  # Not very dynamic song
+                    min_snr = 7
+                    max_snr = 13
+            else:
+                # Default values if we can't analyze chunks
+                min_snr = 7
+                max_snr = 14
+
+            # Generate random SNR within our calculated range
+            target_snr = min_snr + np.random.random() * (max_snr - min_snr)
+
             # Calculate the scaling factor for noise based on the desired SNR
-            scaling_factor = np.sqrt(clean_power / (noise_power * (10 ** (target_snr / 10))))
-            
+            # SNR = 20 * log10(clean_rms / noise_rms)  # Using RMS for better perceptual results
+            # So: noise_rms_new = clean_rms / (10^(SNR/20))
+            scaling_factor = clean_rms / (noise_rms * (10 ** (target_snr / 20)))
+
             # Scale the noise
             noise_data['array'] = noise_samples * scaling_factor
-        
-        print(f"  Noise normalized with target SNR: {target_snr} dB")
+
+        print(f"  Noise normalized with target SNR: {target_snr:.2f} dB (dynamic range-adjusted)")
         return noise_data
-    
+
     except Exception as e:
         print(f"  Error during noise normalization: {e}")
         traceback.print_exc()  # Add traceback for debugging
@@ -719,14 +826,16 @@ def main():
 
     # Ciclo principale di elaborazione
     songs_processed = 1
-    last_song_path = None
+
+    # Lista canzoni usate
+    used_songs = []
 
     # Ciclo esterno (Canzoni)
     rand_iter_songs = np.random.randint(ITER_SONGS_MIN, ITER_SONGS_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_SONGS_MAX else 1
     rand_iter_noises = np.zeros(rand_iter_songs)
     
     for i in range(rand_iter_songs):
-        rand_iter_noises[i] = np.random.randint(ITER_NOISE_MIN, ITER_NOISE_MIN + 1) if 1 <= ITER_SONGS_MIN < ITER_NOISE_MAX else 1
+        rand_iter_noises[i] = np.random.randint(ITER_NOISE_MIN, ITER_NOISE_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_NOISE_MAX else 1
         
     print(f"\nAvvio elaborazione di {rand_iter_songs} canzoni...")
 
@@ -734,10 +843,10 @@ def main():
         # Seleziona una canzone casuale diversa dalla precedente
         while True:
             song_path = random.choice(canzoni_files)
-            if song_path != last_song_path or len(canzoni_files) == 1:
+            if song_path not in used_songs or len(canzoni_files) == 1:
                 break
 
-        last_song_path = song_path
+        used_songs.append(song_path)
         song_name = os.path.splitext(os.path.basename(song_path))[0]
         print(f"\n--- Elaborazione canzone {songs_processed}/{rand_iter_songs}: {song_name} ---")
 
@@ -770,7 +879,9 @@ def main():
 
         # Ciclo interno (Rumori)
         noise_pairs_processed = 1
-        last_noise_pair = None
+
+        # Lista rumori usati
+        used_noises = []
         
         rand_iter_noise = int(rand_iter_noises[songs_processed-1])
 
@@ -795,10 +906,10 @@ def main():
 
                 # Verifica che la coppia di rumori sia diversa dalla precedente
                 current_noise_pair = (noise1_path, noise2_path)
-                if current_noise_pair == last_noise_pair and noise_pairs_processed > 1:
+                if current_noise_pair in used_noises and noise_pairs_processed > 1:
                     continue
 
-                last_noise_pair = current_noise_pair
+                used_noises.append(current_noise_pair)
                 
                 noise1_name = os.path.splitext(os.path.basename(noise1_path))[0]
                 noise2_name = os.path.splitext(os.path.basename(noise2_path))[0]
@@ -821,10 +932,10 @@ def main():
                 noise1_path = random.choice(rumori_per_fold[fold1])
                 
                 # Verifica che il rumore sia diverso dal precedente
-                if noise1_path == last_noise_pair and noise_pairs_processed > 1:
+                if noise1_path in used_noises and noise_pairs_processed > 1:
                     continue
 
-                last_noise_pair = noise1_path
+                used_noises.append(noise1_path)
                 
                 noise1_name = os.path.splitext(os.path.basename(noise1_path))[0]
 
@@ -941,11 +1052,11 @@ def main():
 
             if IS_TRAINING:
                 noise2_base_name = slugify(noise2_name)
-                input_filename = f"INPUT-S{songs_processed}N{noise_pairs_processed}-[{noise1_base_name}]-[{song_base_name}].wav"
-                target_filename = f"TARGET-S{songs_processed}N{noise_pairs_processed}-[{noise2_base_name}]-[{song_base_name}].wav"
+                input_filename = f"INPUT-S{songs_processed}N{noise_pairs_processed}-({noise1_base_name})-({song_base_name}).wav"
+                target_filename = f"TARGET-S{songs_processed}N{noise_pairs_processed}-({noise2_base_name})-({song_base_name}).wav"
             else:
-                input_filename = f"INPUT-S{songs_processed}N{noise_pairs_processed}-[{noise1_base_name}]-[{song_base_name}].wav"
-                target_filename = f"TARGET-S{songs_processed}N{noise_pairs_processed}-[CLEAN]-[{song_base_name}].wav"
+                input_filename = f"INPUT-S{songs_processed}N{noise_pairs_processed}-({noise1_base_name})-({song_base_name}).wav"
+                target_filename = f"TARGET-S{songs_processed}N{noise_pairs_processed}-(CLEAN)-({song_base_name}).wav"
 
             input_path = os.path.join(input_dir, input_filename)
             target_path = os.path.join(target_dir, target_filename)
@@ -972,6 +1083,7 @@ def main():
     print("\nElaborazione completata con successo!")
     parent_dir = os.path.dirname(os.path.dirname(INPUT_DIR))  # Ottiene la directory padre che contiene train/test
     log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)
+    # compress_folders_to_zip(INPUT_DIR, TARGET_DIR, IS_TRAINING)
 
 
 if __name__ == "__main__":
