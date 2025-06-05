@@ -14,75 +14,66 @@ import wave
 
 import numpy as np
 import soundfile as sf
-import torch  # Make sure torch is imported globally so it's accessible in all functions
+import torch
 import unicodedata
 from pydub import AudioSegment
 from pydub import effects
 
-# Costanti globali
+# === PARAMETRI GLOBALI ===
 
-### MODIFICARE QUESTI PER TRAIN/TEST ###
 IS_TRAINING = True
+CLASS_NUM = 0  # <--- MODIFICA QUI LA CLASSE DI RUMORE (0-9)
 
-ITER_SONGS_MIN = 10 if IS_TRAINING else 5  # Numero MINIMO di canzoni da processare
-ITER_SONGS_MAX = 20 if IS_TRAINING else 10  # Numero MASSIMO di canzoni da processare
+ITER_SONGS_MIN = 5 if IS_TRAINING else 5
+ITER_SONGS_MAX = 15 if IS_TRAINING else 10
 
-ITER_NOISE_MIN = 25 if IS_TRAINING else 5  # Numero MINIMO di coppie di rumori per canzone
-ITER_NOISE_MAX = 50 if IS_TRAINING else 15  # Numero MASSIMO di coppie di rumori per canzone
+ITER_NOISE_MIN = 20 if IS_TRAINING else 5
+ITER_NOISE_MAX = 40 if IS_TRAINING else 15
 
-### --- PATHS --- ###
-
-INPUT_DIR = ".\\dataset\\train\\input" if IS_TRAINING else ".\\dataset\\test\\input"
-TARGET_DIR = ".\\dataset\\train\\target" if IS_TRAINING else ".\\dataset\\test\\target"
+DATASET_DIR = f".\\dataset_n{CLASS_NUM}"
+INPUT_DIR = os.path.join(DATASET_DIR, "train", "input") if IS_TRAINING else os.path.join(DATASET_DIR, "test", "input")
+TARGET_DIR = os.path.join(DATASET_DIR, "train", "target") if IS_TRAINING else os.path.join(DATASET_DIR, "test", "target")
 SONGS_DIR = ".\\musdb18\\train" if IS_TRAINING else ".\\musdb18\\test"
 NOISE_DIR = ".\\UrbanSound8K\\audio"
 
-### --- FUNZIONI --- ###
+used_songs_file = f"used_songs_{CLASS_NUM}.txt"
+used_noises_file = f"used_noises_{CLASS_NUM}.txt"
+
+# === FUNZIONI DI UTILITÀ ===
 
 
 def slugify(text):
-    """
-    Converte un testo in uno slug URL-friendly.
-    """
-    # Converte in unicode se necessario
+    """Converte un testo in uno slug URL-friendly."""
     if not isinstance(text, str):
         text = str(text)
-
-    # Converte in ASCII
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
-
-    # Converte in minuscolo e rimuove caratteri non desiderati
     text = re.sub(r'[^\w\s-]', '', text.lower())
-
-    # Sostituisce gli spazi con trattini
     text = re.sub(r'[-\s]+', '-', text).strip('-_')
-
     return text
 
 
+def get_noise_category(noise_filename):
+    """Estrae la categoria del rumore dal nome file UrbanSound8K."""
+    parts = os.path.splitext(noise_filename)[0].split('-')
+    if len(parts) >= 2:
+        try:
+            return int(parts[-2])
+        except ValueError:
+            return None
+    return None
+
+
 def log_generation_stats(is_training, num_pairs, parent_dir):
-    """
-    Registra le statistiche di generazione in un file di log.
-
-    Args:
-        is_training (bool): True se è una sessione di TRAIN, False se è TEST
-        num_pairs (int): Numero di coppie generate
-        parent_dir (str): Directory principale del dataset
-    """
-    import os
+    """Registra le statistiche di generazione in un file di log."""
     import datetime
-    import re
-    from pathlib import Path
-
-    # Determina la directory padre che contiene le cartelle train e test
+    
     log_file = os.path.join(parent_dir, "log.txt")
-
-    # Calcola lo spazio occupato
+    
     input_size = 0
     target_size = 0
     input_files = 0
     target_files = 0
-    attempt = 1  # Valore predefinito se non ci sono tentativi precedenti
+    attempt = 1
 
     if is_training:
         session_type = "TRAIN"
@@ -93,7 +84,6 @@ def log_generation_stats(is_training, num_pairs, parent_dir):
         input_dir = os.path.join(parent_dir, "test", "input")
         target_dir = os.path.join(parent_dir, "test", "target")
 
-    # Calcola la dimensione totale delle cartelle e conta i file
     if os.path.exists(input_dir):
         for dirpath, dirnames, filenames in os.walk(input_dir):
             for f in filenames:
@@ -109,29 +99,22 @@ def log_generation_stats(is_training, num_pairs, parent_dir):
                 target_files += 1
 
     total_size = input_size + target_size
-    total_size_mb = total_size / (1024 * 1024)  # Conversione in MB
+    total_size_mb = total_size / (1024 * 1024)
     total_files = input_files + target_files
 
-    # Ottieni la data odierna
     current_date = datetime.datetime.now().strftime("%d/%m/%Y")
 
-    # Determina il numero del tentativo controllando il file di log
     if os.path.exists(log_file):
         with open(log_file, 'r', encoding='utf-8') as f:
             log_content = f.read()
-            # Cerca tutti i tentativi per la stessa sessione e la stessa data
             pattern = fr"--- DATASET for {session_type} #(\d+)- {current_date}"
             attempts = re.findall(pattern, log_content)
             if attempts:
-                # Prendi l'ultimo tentativo e incrementalo di 1
                 attempt = max(map(int, attempts)) + 1
 
-    # Crea il titolo
     title = f"--- DATASET for {session_type} #{attempt}- {current_date} ---"
-    # Crea una linea di separazione con la stessa lunghezza del titolo
     separator = "-" * len(title)
 
-    # Crea il messaggio di log
     log_message = f"""{title}
 
     Generated pairs: {num_pairs}
@@ -141,18 +124,15 @@ def log_generation_stats(is_training, num_pairs, parent_dir):
 
 """
 
-    # Scrivi nel file di log (append)
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message)
 
     print(f"Log scritto in: {log_file}")
 
-
 def clean_directory(dir_path):
     """Pulisce o crea la directory di output se non esiste."""
     try:
         if os.path.exists(dir_path):
-            # Rimuove il contenuto della directory se esiste
             for item in os.listdir(dir_path):
                 item_path = os.path.join(dir_path, item)
                 if os.path.isfile(item_path):
@@ -161,14 +141,12 @@ def clean_directory(dir_path):
                     shutil.rmtree(item_path)
             print(f"Pulita directory esistente: {dir_path}")
         else:
-            # Crea la directory se non esiste
             os.makedirs(dir_path)
             print(f"Creata directory: {dir_path}")
         return True
     except Exception as e:
         print(f"Errore durante la creazione/pulizia della directory {dir_path}: {e}")
         return False
-
 
 def verify_ffmpeg():
     """Verifica se ffmpeg è installato e accessibile nel PATH."""
@@ -184,30 +162,22 @@ def verify_ffmpeg():
         print("ERRORE: ffmpeg non trovato. Assicurati che sia installato e nel PATH di sistema.")
         return False
 
-
 def is_audio_file(file_path):
     """Verifica se il file è un file audio supportato."""
     audio_extensions = {'.wav', '.mp3', '.flac', '.mp4', '.aac', '.ogg', '.m4a'}
     return os.path.isfile(file_path) and os.path.splitext(file_path)[1].lower() in audio_extensions
 
-
 def load_audio(file_path, use_cuda=False):
-    """
-    Carica un file audio utilizzando librerie di supporto appropriate.
-    Prova prima soundfile, poi pydub, gestendo diversi formati e codifiche.
-    """
+    """Carica un file audio utilizzando librerie di supporto appropriate."""
     try:
-        # Prova prima con soundfile che supporta molti formati WAV
         try:
             data, sample_rate = sf.read(file_path, always_2d=True)
-            # Trasforma in (canali, campioni) se è in (campioni, canali)
-            if data.shape[1] <= 2:  # Se la seconda dimensione è 1 o 2 (mono o stereo)
+            if data.shape[1] <= 2:
                 data = data.T
 
             channels = data.shape[0]
-            sample_width = 2  # Assumiamo 16-bit per default
+            sample_width = 2
 
-            # Se richiesto e disponibile, sposta su CUDA
             if use_cuda and torch.cuda.is_available():
                 data_tensor = torch.tensor(data, dtype=torch.float32).to('cuda')
                 return {
@@ -228,24 +198,16 @@ def load_audio(file_path, use_cuda=False):
                     'cuda': False
                 }
         except Exception as sf_error:
-            # Se soundfile fallisce, prova con pydub
             try:
                 audio = AudioSegment.from_file(file_path)
-
-                # Normalizza volume dell'audio
                 audio = effects.normalize(audio)
-
-                # Conversione in numpy array
                 samples = np.array(audio.get_array_of_samples())
 
-                # Se è mono, reshappiamo l'array per avere la dimensione del canale
                 if audio.channels == 1:
                     samples = samples.reshape(1, -1)
                 else:
-                    # Converte un array stereo in formato (canali, samples)
                     samples = samples.reshape(-1, audio.channels).T
 
-                # Se richiesto e disponibile, sposta su CUDA
                 if use_cuda and torch.cuda.is_available():
                     samples_tensor = torch.tensor(samples, dtype=torch.float32).to('cuda')
                     return {
@@ -266,13 +228,11 @@ def load_audio(file_path, use_cuda=False):
                         'cuda': False
                     }
             except Exception as pydub_error:
-                # Se anche pydub fallisce, usa direttamente ffmpeg per convertire il file
                 try:
                     temp_dir = os.path.join(os.getcwd(), "temp")
                     os.makedirs(temp_dir, exist_ok=True)
                     temp_wav = os.path.join(temp_dir, f"temp_{os.path.basename(file_path)}.wav")
 
-                    # Converti il file problematico in WAV usando ffmpeg
                     command = [
                         'ffmpeg',
                         '-i', file_path,
@@ -283,28 +243,22 @@ def load_audio(file_path, use_cuda=False):
 
                     subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-                    # Ora carica il file WAV temporaneo con wave
                     with wave.open(temp_wav, 'rb') as wf:
-                        # Ottieni le proprietà
                         channels = wf.getnchannels()
                         sample_width = wf.getsampwidth()
                         sample_rate = wf.getframerate()
                         frames = wf.getnframes()
 
-                        # Leggi i dati
                         buffer = wf.readframes(frames)
                         samples = np.frombuffer(buffer, dtype=np.int16)
 
-                        # Riorganizza in (canali, campioni)
                         if channels > 1:
                             samples = samples.reshape(-1, channels).T
                         else:
                             samples = samples.reshape(1, -1)
 
-                    # Rimuovi il file temporaneo
                     os.remove(temp_wav)
 
-                    # Se richiesto e disponibile, sposta su CUDA
                     if use_cuda and torch.cuda.is_available():
                         samples_tensor = torch.tensor(samples, dtype=torch.float32).to('cuda')
                         return {
@@ -335,46 +289,29 @@ def load_audio(file_path, use_cuda=False):
         traceback.print_exc()
         return None
 
-
 def normalize_db(noise_data, clean_data):
-    """
-    Normalizes noise data relative to clean data with an intelligent SNR approach.
-    Uses a range of SNR values (6-15 dB) to ensure the noise doesn't overpower
-    the music but remains audible.
-    Returns the adjusted noise_data.
-    """
+    """Normalizza il rumore rispetto al segnale pulito con approccio SNR intelligente."""
     try:
-        # Ensure noise_data is not None
         if noise_data is None:
             print("  Error: noise_data is None in normalize_db function")
             return None
 
-        # Ensure clean_data is not None
         if clean_data is None:
             print("  Error: clean_data is None in normalize_db function")
             return None
 
-        # If song has high dynamic range, use higher SNR to make noise less intrusive
-        # in quiet passages, while still audible in louder parts
         min_snr = 2
         max_snr = 27
 
-        # Extract data arrays or tensors based on whether they're on CUDA or not
         if noise_data.get('cuda', False):
-            # CUDA version with PyTorch
             noise_samples = noise_data['tensor']
             clean_samples = clean_data['tensor']
 
-            # Calculate RMS of clean signal (more perceptually relevant than power)
             clean_rms = torch.sqrt(torch.mean(clean_samples.float() ** 2))
-
-            # Calculate RMS of noise
             noise_rms = torch.sqrt(torch.mean(noise_samples.float() ** 2))
 
-            # Analyze the dynamic range of the clean signal
-            if clean_samples.shape[1] > 0:  # Ensure we have samples
-                # Divide signal into chunks and get per-chunk RMS
-                chunk_size = min(44100, clean_samples.shape[1])  # 1-second chunks at 44.1 kHz
+            if clean_samples.shape[1] > 0:
+                chunk_size = min(44100, clean_samples.shape[1])
                 num_chunks = max(1, clean_samples.shape[1] // chunk_size)
                 chunks_rms = []
 
@@ -385,47 +322,31 @@ def normalize_db(noise_data, clean_data):
                     chunk_rms = torch.sqrt(torch.mean(chunk.float() ** 2))
                     chunks_rms.append(chunk_rms.item())
 
-                # Calculate dynamic range - use this to adjust SNR intelligently
                 dynamic_range = max(chunks_rms) / (min(chunks_rms) + 1e-10)
 
-                # Adjust SNR range based on dynamic range
-                if dynamic_range > 10:  # Very dynamic song
+                if dynamic_range > 10:
                     min_snr = 4
                     max_snr = 30
-                elif dynamic_range < 3:  # Not very dynamic song
+                elif dynamic_range < 3:
                     min_snr = 0
                     max_snr = 25
             else:
-                # Default values if we can't analyze chunks
                 min_snr = 2
                 max_snr = 27
 
-            # Generate random SNR within our calculated range
             target_snr = min_snr + torch.rand(1).item() * (max_snr - min_snr)
-
-            # Calculate the scaling factor for noise based on the desired SNR
-            # SNR = 20 * log10(clean_rms / noise_rms)  # Using RMS for better perceptual results
-            # So: noise_rms_new = clean_rms / (10^(SNR/20))
             scaling_factor = clean_rms / (noise_rms * (10 ** (target_snr / 20)))
-
-            # Scale the noise
             noise_data['tensor'] = noise_samples * scaling_factor
 
         else:
-            # CPU version with numpy
             noise_samples = noise_data['array']
             clean_samples = clean_data['array']
 
-            # Calculate RMS of clean signal (more perceptually relevant than power)
             clean_rms = np.sqrt(np.mean(clean_samples ** 2))
-
-            # Calculate RMS of noise
             noise_rms = np.sqrt(np.mean(noise_samples ** 2))
 
-            # Analyze the dynamic range of the clean signal
-            if clean_samples.shape[1] > 0:  # Ensure we have samples
-                # Divide signal into chunks and get per-chunk RMS
-                chunk_size = min(44100, clean_samples.shape[1])  # 1-second chunks at 44.1 kHz
+            if clean_samples.shape[1] > 0:
+                chunk_size = min(44100, clean_samples.shape[1])
                 num_chunks = max(1, clean_samples.shape[1] // chunk_size)
                 chunks_rms = []
 
@@ -436,30 +357,20 @@ def normalize_db(noise_data, clean_data):
                     chunk_rms = np.sqrt(np.mean(chunk ** 2))
                     chunks_rms.append(chunk_rms)
 
-                # Calculate dynamic range - use this to adjust SNR intelligently
                 dynamic_range = max(chunks_rms) / (min(chunks_rms) + 1e-10)
 
-                # Adjust SNR range based on dynamic range
-                if dynamic_range > 10:  # Very dynamic song
+                if dynamic_range > 10:
                     min_snr = 4
                     max_snr = 30
-                elif dynamic_range < 3:  # Not very dynamic song
+                elif dynamic_range < 3:
                     min_snr = 0
                     max_snr = 25
             else:
-                # Default values if we can't analyze chunks
                 min_snr = 2
                 max_snr = 27
 
-            # Generate random SNR within our calculated range
             target_snr = min_snr + np.random.random() * (max_snr - min_snr)
-
-            # Calculate the scaling factor for noise based on the desired SNR
-            # SNR = 20 * log10(clean_rms / noise_rms)  # Using RMS for better perceptual results
-            # So: noise_rms_new = clean_rms / (10^(SNR/20))
             scaling_factor = clean_rms / (noise_rms * (10 ** (target_snr / 20)))
-
-            # Scale the noise
             noise_data['array'] = noise_samples * scaling_factor
 
         print(f"  Noise normalized with target SNR: {target_snr:.2f} dB (dynamic range-adjusted)")
@@ -467,49 +378,38 @@ def normalize_db(noise_data, clean_data):
 
     except Exception as e:
         print(f"  Error during noise normalization: {e}")
-        traceback.print_exc()  # Add traceback for debugging
+        traceback.print_exc()
         return None
-
 
 def save_audio(audio_data, output_path, format_='wav'):
     """Salva i dati audio in un file, supportando sia dati numpy che tensori PyTorch."""
     try:
-        # Estrai i dati in formato numpy se sono su CUDA
         if audio_data.get('cuda', False):
             samples = audio_data['tensor'].cpu().numpy()
         else:
             samples = audio_data['array']
 
-        # Assicurati che i dati siano in int16 per la compatibilità con la maggior parte dei formati audio
         if samples.dtype != np.int16:
-            # Scala e converti in int16 se necessario
             if samples.dtype == np.float32 or samples.dtype == np.float64:
                 samples = np.clip(samples, -1.0, 1.0)
-                # Assumiamo che i float siano in range [-1, 1]
                 samples = (samples * 32767).astype(np.int16)
             else:
                 samples = np.clip(samples, -1.0, 1.0)
                 samples = samples.astype(np.int16)
 
-        # Crea la directory di output se non esiste
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-        # Prova a salvare con soundfile per prima scelta
         try:
-            # Reshaping se necessario per soundfile (campioni, canali)
             sf_samples = samples.T
             sf.write(output_path, sf_samples, audio_data['sample_rate'])
             return True
         except Exception as sf_error:
-            # Fallback a pydub
             try:
-                # Converti in formato adatto per pydub (canali, samples) -> (samples, canali)
                 if samples.ndim > 1:
                     pydub_samples = samples.T.reshape(-1)
                 else:
                     pydub_samples = samples
 
-                # Crea un nuovo AudioSegment
                 segment = AudioSegment(
                     pydub_samples.tobytes(),
                     frame_rate=audio_data['sample_rate'],
@@ -517,40 +417,32 @@ def save_audio(audio_data, output_path, format_='wav'):
                     channels=audio_data['channels']
                 )
 
-                # Salva il file
                 segment.export(output_path, format=format_)
                 return True
             except Exception as pydub_error:
-                # Se anche pydub fallisce, usa ffmpeg direttamente
                 try:
-                    # Salva temporaneamente come raw PCM
                     temp_dir = os.path.join(os.getcwd(), "temp")
                     os.makedirs(temp_dir, exist_ok=True)
                     temp_raw = os.path.join(temp_dir, "temp_raw.pcm")
 
-                    # Salva i dati raw
                     with open(temp_raw, 'wb') as f:
                         if samples.ndim > 1:
-                            # Converti da (canali, campioni) a (campioni, canali)
                             samples_interleaved = samples.T.reshape(-1)
                         else:
                             samples_interleaved = samples
                         f.write(samples_interleaved.tobytes())
 
-                    # Usa ffmpeg per convertire da raw PCM al formato desiderato
                     command = [
                         'ffmpeg',
-                        '-f', 's16le',  # formato di input
-                        '-ar', str(audio_data['sample_rate']),  # sample rate
-                        '-ac', str(audio_data['channels']),  # canali
-                        '-i', temp_raw,  # file di input
-                        '-y',  # sovrascrivi
-                        output_path  # file di output
+                        '-f', 's16le',
+                        '-ar', str(audio_data['sample_rate']),
+                        '-ac', str(audio_data['channels']),
+                        '-i', temp_raw,
+                        '-y',
+                        output_path
                     ]
 
                     subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-                    # Rimuovi il file temporaneo
                     os.remove(temp_raw)
                     return True
                 except Exception as ffmpeg_error:
@@ -563,26 +455,19 @@ def save_audio(audio_data, output_path, format_='wav'):
         traceback.print_exc()
         return False
 
-
 def make_audio_zero_mean(audio_data):
-    """
-    Rende l'audio a media zero. Funziona sia con array numpy che con tensori PyTorch.
-    Versione semplificata rispetto a zero_mean.py
-    """
+    """Rende l'audio a media zero."""
     try:
-        # Check if audio_data is None
         if audio_data is None:
             print("  Error: audio_data is None in make_audio_zero_mean")
             return None
 
         if audio_data.get('cuda', False):
-            # Versione CUDA con PyTorch
             samples = audio_data['tensor']
             mean = torch.mean(samples.float(), dim=1, keepdim=True)
             samples = samples - mean
             audio_data['tensor'] = samples
         else:
-            # Versione CPU con numpy
             samples = audio_data['array']
             mean = np.mean(samples, axis=1, keepdims=True)
             samples = samples - mean
@@ -591,17 +476,12 @@ def make_audio_zero_mean(audio_data):
         return audio_data
     except Exception as e:
         print(f"Errore durante l'azzeramento della media: {e}")
-        traceback.print_exc()  # Add traceback for debugging
+        traceback.print_exc()
         return None
 
-
 def loop_or_truncate(audio_data, target_length):
-    """
-    Loop o tronca l'audio per raggiungere la lunghezza target.
-    Funziona sia con array numpy che con tensori PyTorch.
-    """
+    """Loop o tronca l'audio per raggiungere la lunghezza target."""
     try:
-        # Check if audio_data is None
         if audio_data is None:
             print("  Error: audio_data is None in loop_or_truncate")
             return None
@@ -615,15 +495,12 @@ def loop_or_truncate(audio_data, target_length):
             return None
 
         if audio_data.get('cuda', False):
-            # Versione CUDA con PyTorch
             samples = audio_data['tensor']
             current_length = samples.shape[1]
 
             if current_length >= target_length:
-                # Tronca se più lungo
                 audio_data['tensor'] = samples[:, :target_length]
             else:
-                # Loop se più corto
                 num_repeats = target_length // current_length
                 remainder = target_length % current_length
 
@@ -634,15 +511,12 @@ def loop_or_truncate(audio_data, target_length):
                 else:
                     audio_data['tensor'] = repeated
         else:
-            # Versione CPU con numpy
             samples = audio_data['array']
             current_length = samples.shape[1]
 
             if current_length >= target_length:
-                # Tronca se più lungo
                 audio_data['array'] = samples[:, :target_length]
             else:
-                # Loop se più corto
                 num_repeats = target_length // current_length
                 remainder = target_length % current_length
 
@@ -656,50 +530,44 @@ def loop_or_truncate(audio_data, target_length):
         return audio_data
     except Exception as e:
         print(f"Errore durante il loop/troncamento dell'audio: {e}")
-        traceback.print_exc()  # Add traceback for debugging
+        traceback.print_exc()
         return None
-
 
 def convert_to_stereo(audio_data):
     """Converte l'audio in stereo se è mono."""
     try:
-        # Check if audio_data is None
         if audio_data is None:
             print("  Error: audio_data is None in convert_to_stereo")
             return None
 
         if audio_data.get('cuda', False):
-            # Versione CUDA con PyTorch
             samples = audio_data['tensor']
-            if samples.shape[0] == 1:  # È mono
+            if samples.shape[0] == 1:
                 audio_data['tensor'] = samples.repeat(2, 1)
                 audio_data['channels'] = 2
         else:
-            # Versione CPU con numpy
             samples = audio_data['array']
-            if samples.shape[0] == 1:  # È mono
+            if samples.shape[0] == 1:
                 audio_data['array'] = np.repeat(samples, 2, axis=0)
                 audio_data['channels'] = 2
 
         return audio_data
     except Exception as e:
         print(f"Errore durante la conversione in stereo: {e}")
-        traceback.print_exc()  # Add traceback for debugging
+        traceback.print_exc()
         return None
-
 
 def extract_mixture(mp4_path, temp_dir):
     """Estrae la traccia mixture da un file MP4 usando ffmpeg."""
     try:
         output_path = os.path.join(temp_dir, f"{os.path.splitext(os.path.basename(mp4_path))[0]}_mixture.wav")
 
-        # Comando ffmpeg per estrarre la prima traccia audio
         command = [
             'ffmpeg',
             '-i', mp4_path,
-            '-map', '0:a:0',  # Prima traccia audio
-            '-acodec', 'pcm_s16le',  # Output WAV
-            '-y',  # Sovrascrivi se esiste
+            '-map', '0:a:0',
+            '-acodec', 'pcm_s16le',
+            '-y',
             output_path
         ]
 
@@ -710,23 +578,17 @@ def extract_mixture(mp4_path, temp_dir):
         return None
     except Exception as e:
         print(f"Errore durante l'estrazione della traccia mixture: {e}")
-        traceback.print_exc()  # Add traceback for debugging
+        traceback.print_exc()
         return None
-
 
 def fix_path_separators(path):
     """Corregge i separatori di percorso in base al sistema operativo."""
-    if os.name == 'nt':  # Windows
+    if os.name == 'nt':
         return path.replace('/', '\\')
-    else:  # Unix/Linux/Mac
+    else:
         return path.replace('\\', '/')
 
-
 def main():
-    # Liste canzoni e rumori usati
-    used_songs_file = "used_songs.txt"
-    used_noises_file = "used_noises.txt"
-
     def backup_file(path):
         if os.path.exists(path):
             shutil.copy2(path, path + '.bak')
@@ -743,28 +605,21 @@ def main():
             os.remove(bak)
 
     try:
-        # Parsing degli argomenti
         parser = argparse.ArgumentParser(description='Script per sovrapporre file audio di rumore a file audio di canzoni.')
-        parser.add_argument('--path-canzoni', type=str, default=SONGS_DIR,
-                            help='Percorso alla directory contenente i file audio delle canzoni (MP4).')
-        parser.add_argument('--path-rumori', type=str, default=NOISE_DIR,
-                            help='Percorso alla directory contenente i file audio di rumore (WAV).')
-        parser.add_argument('--iter-songs', type=int, default=ITER_SONGS_MAX,
-                            help=f'Numero di canzoni da processare (default: {ITER_SONGS_MAX}).')
-        parser.add_argument('--iter-noise', type=int, default=ITER_NOISE_MAX,
-                            help=f'Numero di coppie di rumori per canzone (default: {ITER_NOISE_MAX}).')
-        parser.add_argument('--use-cuda', action='store_true', help='Utilizza CUDA/GPU se disponibile.')
-        parser.add_argument('--input-dir', type=str, default=INPUT_DIR, help='Directory di output per i file INPUT.')
-        parser.add_argument('--target-dir', type=str, default=TARGET_DIR, help='Directory di output per i file TARGET.')
+        parser.add_argument('--path-canzoni', type=str, default=SONGS_DIR)
+        parser.add_argument('--path-rumori', type=str, default=NOISE_DIR)
+        parser.add_argument('--iter-songs', type=int, default=ITER_SONGS_MAX)
+        parser.add_argument('--iter-noise', type=int, default=ITER_NOISE_MAX)
+        parser.add_argument('--use-cuda', action='store_true')
+        parser.add_argument('--input-dir', type=str, default=INPUT_DIR)
+        parser.add_argument('--target-dir', type=str, default=TARGET_DIR)
         args = parser.parse_args()
 
-        # Correggi i percorsi per il sistema operativo corrente
         args.path_canzoni = fix_path_separators(args.path_canzoni)
         args.path_rumori = fix_path_separators(args.path_rumori)
         args.input_dir = fix_path_separators(args.input_dir)
         args.target_dir = fix_path_separators(args.target_dir)
 
-        # Verifica dell'esistenza delle directory
         if not os.path.isdir(args.path_canzoni):
             print(f"Errore: La directory delle canzoni '{args.path_canzoni}' non esiste.")
             sys.exit(1)
@@ -773,12 +628,10 @@ def main():
             print(f"Errore: La directory dei rumori '{args.path_rumori}' non esiste.")
             sys.exit(1)
 
-        # Verifica della presenza di ffmpeg
         if not verify_ffmpeg():
             print("Errore: FFmpeg non disponibile. Impossibile continuare.")
             sys.exit(1)
 
-        # Verifica dell'uso di CUDA
         use_cuda = args.use_cuda and torch.cuda.is_available()
         if args.use_cuda:
             if use_cuda:
@@ -786,7 +639,6 @@ def main():
             else:
                 print("AVVISO: CUDA richiesto ma non disponibile. Verrà utilizzata la CPU.")
 
-        # Creazione delle directory di output
         input_dir = args.input_dir
         target_dir = args.target_dir
         temp_dir = os.path.join(os.getcwd(), "temp")
@@ -796,64 +648,54 @@ def main():
                 print(f"Errore: Impossibile creare/pulire la directory '{dir_path}'.")
                 sys.exit(1)
 
-        # Trova i file nelle directory
         print("Ricerca dei file di canzoni e rumori...")
 
-        # Lista dei file delle canzoni
         canzoni_files = [os.path.join(args.path_canzoni, f) for f in os.listdir(args.path_canzoni)
                          if is_audio_file(os.path.join(args.path_canzoni, f))]
         if not canzoni_files:
             print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_canzoni}'.")
             sys.exit(1)
 
-        # Liste dei file di rumore per ogni fold
+        # CARICAMENTO RUMORI SOLO DELLA CLASSE SPECIFICATA
         folds = [f"fold{i}" for i in range(1, 11)]
         rumori_per_fold = {}
 
         for fold in folds:
             fold_path = os.path.join(args.path_rumori, fold)
             if os.path.isdir(fold_path):
-                rumori_per_fold[fold] = [os.path.join(fold_path, f) for f in os.listdir(fold_path)
-                                         if is_audio_file(os.path.join(fold_path, f))]
-                print(f"Trovati {len(rumori_per_fold[fold])} file di rumore in {fold}")
+                rumori_per_fold[fold] = [
+                    os.path.join(fold_path, f)
+                    for f in os.listdir(fold_path)
+                    if is_audio_file(os.path.join(fold_path, f)) and get_noise_category(f) == CLASS_NUM
+                ]
+                print(f"Trovati {len(rumori_per_fold[fold])} file di rumore della categoria {CLASS_NUM} in {fold}")
 
-        # Verifica la presenza di file di rumore
         if not any(rumori_per_fold.values()):
-            print(f"Errore: Nessun file audio di rumore trovato nelle sottocartelle fold* di '{args.path_rumori}'.")
+            print(f"Errore: Nessun file audio di rumore della categoria {CLASS_NUM} trovato.")
             sys.exit(1)
 
-        # Counter delle coppie generate
         generated_pairs = 0
-
-        # Ciclo principale di elaborazione
         songs_processed = 1
 
         backup_file(used_songs_file)
         backup_file(used_noises_file)
 
-        # Carica i file audio già utilizzati, se esistono
         used_songs = []
         if os.path.exists(used_songs_file):
             with open(used_songs_file, 'r') as f:
                 used_songs = [line.strip() for line in f.readlines()]
 
-        # Ciclo esterno (Canzoni)
-
-        rand_iter_songs = np.random.randint(ITER_SONGS_MIN,
-                                            ITER_SONGS_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_SONGS_MAX else 1
+        rand_iter_songs = np.random.randint(ITER_SONGS_MIN, ITER_SONGS_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_SONGS_MAX else 1
         rand_iter_noises = np.zeros(rand_iter_songs)
 
         for i in range(rand_iter_songs):
-            rand_iter_noises[i] = np.random.randint(ITER_NOISE_MIN,
-                                                    ITER_NOISE_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_NOISE_MAX else 1
+            rand_iter_noises[i] = np.random.randint(ITER_NOISE_MIN, ITER_NOISE_MAX + 1) if 1 <= ITER_SONGS_MIN < ITER_NOISE_MAX else 1
 
         print(f"\nAvvio elaborazione di {rand_iter_songs} canzoni...")
 
         while songs_processed <= rand_iter_songs:
-            # Seleziona una canzone casuale non utilizzata in precedenza
             available_songs = [song for song in canzoni_files if os.path.basename(song) not in used_songs]
 
-            # Se tutte le canzoni sono state utilizzate o non ci sono canzoni disponibili, usa una casuale
             if not available_songs and canzoni_files:
                 song_path = random.choice(canzoni_files)
             elif available_songs:
@@ -864,64 +706,49 @@ def main():
 
             song_basename = os.path.basename(song_path)
 
-            # Prima leggi il contenuto esistente
             with open(used_songs_file, 'r') as f:
                 existing_songs = f.readlines()
 
             songs_count = len(existing_songs)
 
             if songs_count >= 75:
-                # Rimuovi la prima riga e mantieni le altre
                 existing_songs = existing_songs[1:]
-
-                # Riscrivi il file con le righe rimanenti + la nuova riga
                 with open(used_songs_file, 'w') as f:
                     f.writelines(existing_songs)
                     f.write(f"{song_basename}\n")
-
                 print(f"Rimossa la prima riga dal file. Mantenute {len(existing_songs) + 1} righe totali.")
             else:
-                # Se siamo sotto le 75 righe, aggiungi normalmente
                 with open(used_songs_file, 'a') as f:
                     f.write(f"{song_basename}\n")
 
-            # Aggiorna la lista in memoria con i file appena caricati
             used_songs.append(song_basename)
 
             song_name = os.path.splitext(os.path.basename(song_path))[0]
             print(f"\n--- Elaborazione canzone {songs_processed}/{rand_iter_songs}: {song_name} ---")
 
-            # Estrai la traccia mixture per le canzoni MP4
             if song_path.lower().endswith('.mp4'):
                 print(f"Estrazione della traccia mixture da {song_name}...")
                 extracted_path = extract_mixture(song_path, temp_dir)
                 if not extracted_path:
-                    print(
-                        f"Errore: Impossibile estrarre la traccia mixture da {song_path}. Passaggio alla canzone successiva.")
+                    print(f"Errore: Impossibile estrarre la traccia mixture da {song_path}. Passaggio alla canzone successiva.")
                     continue
                 song_path = extracted_path
                 song_name = os.path.splitext(os.path.basename(song_path))[0].replace('.stem_mixture', '')
 
-            # Carica la canzone
             print(f"Caricamento della canzone: {song_name}...")
             song_data = load_audio(song_path, use_cuda)
             if song_data is None:
                 print(f"Errore: Impossibile caricare il file {song_path}. Passaggio alla canzone successiva.")
                 continue
 
-            # Verifica che la canzone sia in stereo o convertila
             song_data = convert_to_stereo(song_data)
             if song_data is None:
                 print(f"Errore: Impossibile convertire la canzone in stereo. Passaggio alla canzone successiva.")
                 continue
 
-            # Ottieni la lunghezza della canzone
             song_length = song_data['tensor'].shape[1] if use_cuda else song_data['array'].shape[1]
 
-            # Ciclo interno (Rumori)
             noise_pairs_processed = 1
-
-            # Lista rumori usati
             used_noises = []
             rand_iter_noise = int(rand_iter_noises[songs_processed - 1])
 
@@ -929,7 +756,6 @@ def main():
             generated_pairs += rand_iter_noise
 
             while noise_pairs_processed <= rand_iter_noise:
-                # Inizializza variabili per rumori e nomi
                 noise1_data = None
                 noise2_data = None
                 noise1_name = ""
@@ -938,8 +764,7 @@ def main():
                 print(f"\n  Coppia di rumori {noise_pairs_processed}/{rand_iter_noise} "
                       f"(canzone {songs_processed}/{rand_iter_songs}):")
 
-                # Gestione del primo rumore
-                # Seleziona un fold casuale per il primo rumore
+                # PRIMO RUMORE - SOLO DELLA CATEGORIA CLASS_NUM
                 available_folds = [fold for fold in rumori_per_fold.keys() if rumori_per_fold[fold]]
                 if not available_folds:
                     print("Errore: Non ci sono fold con file di rumore. Impossibile continuare.")
@@ -947,7 +772,6 @@ def main():
 
                 fold1 = random.choice(available_folds)
 
-                # Seleziona un rumore casuale dal fold, non usato in precedenza se possibile
                 fold1_available = [noise for noise in rumori_per_fold[fold1]
                                    if os.path.basename(noise) not in used_noises]
                 if not fold1_available and rumori_per_fold[fold1]:
@@ -960,7 +784,6 @@ def main():
 
                 noise1_basename = os.path.basename(noise1_path)
 
-                # Prima leggi il contenuto esistente del file rumori
                 existing_noises = []
                 if os.path.exists(used_noises_file):
                     with open(used_noises_file, 'r') as f:
@@ -969,59 +792,42 @@ def main():
                 noises_count = len(existing_noises)
 
                 if noises_count >= 4000:
-                    # Rimuovi la prima riga e mantieni le altre
                     existing_noises = existing_noises[1:]
-
-                    # Riscrivi il file con le righe rimanenti + la nuova riga
                     with open(used_noises_file, 'w') as f:
                         f.writelines(existing_noises)
                         f.write(f"{noise1_basename}\n")
-
                     print(f"Rimossa la prima riga dal file rumori. Mantenute {len(existing_noises) + 1} righe totali.")
                 else:
-                    # Se siamo sotto le 4000 righe, aggiungi normalmente
                     with open(used_noises_file, 'a') as f:
                         f.write(f"{noise1_basename}\n")
 
-                # Aggiorna la lista in memoria
                 used_noises.append(noise1_basename)
-
                 noise1_name = os.path.splitext(os.path.basename(noise1_path))[0]
-
                 print(f"  - Rumore 1: {noise1_name} (da {fold1})")
 
-                # Carica il primo rumore
                 print(f"  Caricamento del rumore 1: {noise1_path}")
                 noise1_data = load_audio(noise1_path, use_cuda)
                 if noise1_data is None:
                     print(f"  Errore: Impossibile caricare il rumore 1. Tentativo con un altro rumore.")
                     continue
 
-                # Verifica che il rumore sia in stereo o convertilo
                 noise1_data = convert_to_stereo(noise1_data)
-
-                # Azzera la media del rumore
                 noise1_data = make_audio_zero_mean(noise1_data)
                 if noise1_data is None:
                     print("  Errore: Impossibile azzerare la media del rumore 1. Passaggio alla coppia successiva.")
                     continue
 
-                # Normalizza i dati di rumore rispetto ai dati puliti
                 noise1_data = normalize_db(noise1_data, song_data)
-
-                # Adatta la lunghezza del rumore alla canzone
                 noise1_data = loop_or_truncate(noise1_data, song_length)
                 if noise1_data is None:
                     print("  Errore: Impossibile adattare la lunghezza del rumore 1. Passaggio alla coppia successiva.")
                     continue
 
-                # Per la modalità train, processa anche il secondo rumore
+                # SECONDO RUMORE - SOLO DELLA CATEGORIA CLASS_NUM (per training)
                 if IS_TRAINING:
-                    # Seleziona un secondo fold diverso dal primo (se possibile)
                     available_folds_2 = [fold for fold in rumori_per_fold.keys()
                                          if rumori_per_fold[fold] and fold != fold1]
                     if not available_folds_2:
-                        # Se non ci sono altri fold, usa lo stesso fold del primo rumore
                         available_folds_2 = [fold for fold in rumori_per_fold.keys() if rumori_per_fold[fold]]
 
                     if not available_folds_2:
@@ -1030,7 +836,6 @@ def main():
 
                     fold2 = random.choice(available_folds_2)
 
-                    # Seleziona un rumore casuale dal secondo fold, non usato in precedenza se possibile
                     fold2_available = [noise for noise in rumori_per_fold[fold2]
                                        if os.path.basename(noise) not in used_noises]
                     if not fold2_available and rumori_per_fold[fold2]:
@@ -1043,7 +848,6 @@ def main():
 
                     noise2_basename = os.path.basename(noise2_path)
 
-                    # Prima leggi il contenuto esistente del file rumori
                     existing_noises = []
                     if os.path.exists(used_noises_file):
                         with open(used_noises_file, 'r') as f:
@@ -1052,26 +856,17 @@ def main():
                     noises_count = len(existing_noises)
 
                     if noises_count >= 4000:
-                        # Rimuovi la prima riga e mantieni le altre
                         existing_noises = existing_noises[1:]
-
-                        # Riscrivi il file con le righe rimanenti + la nuova riga
                         with open(used_noises_file, 'w') as f:
                             f.writelines(existing_noises)
                             f.write(f"{noise2_basename}\n")
-
-                        print(
-                            f"Rimossa la prima riga dal file rumori. Mantenute {len(existing_noises) + 1} righe totali.")
+                        print(f"Rimossa la prima riga dal file rumori. Mantenute {len(existing_noises) + 1} righe totali.")
                     else:
-                        # Se siamo sotto le 4000 righe, aggiungi normalmente
                         with open(used_noises_file, 'a') as f:
                             f.write(f"{noise2_basename}\n")
 
-                    # Aggiorna la lista in memoria
                     used_noises.append(noise2_basename)
-
                     noise2_name = os.path.splitext(os.path.basename(noise2_path))[0]
-
                     print(f"  - Rumore 2: {noise2_name} (da {fold2})")
 
                     print(f"  Caricamento del rumore 2: {noise2_path}")
@@ -1080,44 +875,33 @@ def main():
                         print(f"  Errore: Impossibile caricare il rumore 2. Tentativo con un altro rumore.")
                         continue
 
-                    # Verifica che il rumore sia in stereo o convertilo
                     noise2_data = convert_to_stereo(noise2_data)
-
-                    # Normalizza i dati di rumore rispetto ai dati puliti
                     noise2_data = normalize_db(noise2_data, song_data)
-
-                    # Azzera la media del rumore
                     noise2_data = make_audio_zero_mean(noise2_data)
                     if noise2_data is None:
                         print("  Errore: Impossibile azzerare la media del rumore 2. Passaggio alla coppia successiva.")
                         continue
 
-                    # Adatta la lunghezza del rumore alla canzone
                     noise2_data = loop_or_truncate(noise2_data, song_length)
                     if noise2_data is None:
-                        print(
-                            "  Errore: Impossibile adattare la lunghezza del rumore 2. Passaggio alla coppia successiva.")
+                        print("  Errore: Impossibile adattare la lunghezza del rumore 2. Passaggio alla coppia successiva.")
                         continue
 
-                # Controlla se è necessario pulire il file used_noises.txt
                 if os.path.exists(used_noises_file):
                     with open(used_noises_file, 'r') as f:
                         noises_count = len(f.readlines())
 
                     if noises_count >= 4000:
-                        # Pulisci il file se abbiamo superato la soglia
                         open(used_noises_file, 'w').close()
                         used_noises = []
 
-                # Sovrapponi i rumori alla canzone
+                # SOVRAPPOSIZIONE
                 if use_cuda:
-                    # Versione CUDA
                     input_samples = song_data['tensor'] + noise1_data['tensor']
 
                     if IS_TRAINING:
                         target_samples = song_data['tensor'] + noise2_data['tensor']
                     else:
-                        # In modalità test, il target è la canzone originale senza rumore
                         target_samples = song_data['tensor']
 
                     input_audio = {
@@ -1136,13 +920,11 @@ def main():
                         'cuda': True
                     }
                 else:
-                    # Versione CPU
                     input_samples = song_data['array'] + noise1_data['array']
 
                     if IS_TRAINING:
                         target_samples = song_data['array'] + noise2_data['array']
                     else:
-                        # In modalità test, il target è la canzone originale senza rumore
                         target_samples = song_data['array']
 
                     input_audio = {
@@ -1161,7 +943,7 @@ def main():
                         'cuda': False
                     }
 
-                # Crea i nomi dei file di output
+                # NOMI FILE
                 noise1_base_name = slugify(noise1_name)
                 song_base_name = slugify(song_name)
 
@@ -1176,7 +958,6 @@ def main():
                 input_path = os.path.join(input_dir, input_filename)
                 target_path = os.path.join(target_dir, target_filename)
 
-                # Salva i file di output
                 print(f"  Salvataggio dei file di output...")
 
                 if save_audio(input_audio, input_path) and save_audio(target_audio, target_path):
@@ -1185,10 +966,8 @@ def main():
                 else:
                     print("  Errore durante il salvataggio dei file. Passaggio alla coppia successiva.")
 
-            # Incrementa il contatore delle canzoni processate
             songs_processed += 1
 
-        # Pulizia della directory temporanea
         try:
             shutil.rmtree(temp_dir)
             print(f"\nDirectory temporanea '{temp_dir}' rimossa.")
@@ -1196,18 +975,16 @@ def main():
             print(f"\nAvviso: Impossibile rimuovere la directory temporanea '{temp_dir}': {e}")
 
         print("\nElaborazione completata con successo!")
-        parent_dir = os.path.dirname(os.path.dirname(INPUT_DIR))  # Ottiene la directory padre che contiene train/test
-        log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)
+        parent_dir = os.path.dirname(os.path.dirname(INPUT_DIR))
+        log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)[1][2]
     except (Exception, KeyboardInterrupt):
         print("\nERRORE o interruzione! Ripristino dei file di uso...")
         restore_file(used_songs_file)
         restore_file(used_noises_file)
         sys.exit(1)
     finally:
-        # Se il backup esiste e non c'è stato errore, lo elimina
         remove_backup(used_songs_file)
         remove_backup(used_noises_file)
-
 
 if __name__ == "__main__":
     main()
