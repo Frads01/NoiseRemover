@@ -22,22 +22,32 @@ from pydub import effects
 # === PARAMETRI GLOBALI ===
 
 IS_TRAINING = True
-CLASS_NUM = 0  # <--- MODIFICA QUI LA CLASSE DI RUMORE (0-9)
+CLASS_NUM = 9
+# 0 = air_conditioner
+# 1 = car_horn
+# 2 = children_playing
+# 3 = dog_bark
+# 4 = drilling
+# 5 = engine_idling
+# 6 = gun_shot
+# 7 = jackhammer
+# 8 = siren
+# 9 = street_music
 
-ITER_SONGS_MIN = 5 if IS_TRAINING else 5
-ITER_SONGS_MAX = 15 if IS_TRAINING else 10
+ITER_SONGS_MIN = 5 if IS_TRAINING else 3
+ITER_SONGS_MAX = 10 if IS_TRAINING else 5
 
-ITER_NOISE_MIN = 20 if IS_TRAINING else 5
-ITER_NOISE_MAX = 40 if IS_TRAINING else 15
+ITER_NOISE_MIN = 10 if IS_TRAINING else 5
+ITER_NOISE_MAX = 20 if IS_TRAINING else 8
 
-DATASET_DIR = f".\\dataset_n{CLASS_NUM}"
+DATASET_DIR = f".\\dataset_class\\dataset_n{CLASS_NUM}"
 INPUT_DIR = os.path.join(DATASET_DIR, "train", "input") if IS_TRAINING else os.path.join(DATASET_DIR, "test", "input")
 TARGET_DIR = os.path.join(DATASET_DIR, "train", "target") if IS_TRAINING else os.path.join(DATASET_DIR, "test", "target")
 SONGS_DIR = ".\\musdb18\\train" if IS_TRAINING else ".\\musdb18\\test"
 NOISE_DIR = ".\\UrbanSound8K\\audio"
 
-used_songs_file = f"used_songs_{CLASS_NUM}.txt"
-used_noises_file = f"used_noises_{CLASS_NUM}.txt"
+used_songs_file = f".\\dataset_class\\dataset_n{CLASS_NUM}\\used_songs_{CLASS_NUM}.txt"
+used_noises_file = f".\\dataset_class\\dataset_n{CLASS_NUM}\\used_noises_{CLASS_NUM}.txt"
 
 # === FUNZIONI DI UTILITÀ ===
 
@@ -57,7 +67,7 @@ def get_noise_category(noise_filename):
     parts = os.path.splitext(noise_filename)[0].split('-')
     if len(parts) >= 2:
         try:
-            return int(parts[-2])
+            return int(parts[1])
         except ValueError:
             return None
     return None
@@ -102,7 +112,7 @@ def log_generation_stats(is_training, num_pairs, parent_dir):
     total_size_mb = total_size / (1024 * 1024)
     total_files = input_files + target_files
 
-    current_date = datetime.datetime.now().strftime("%d/%m/%Y")
+    current_date = datetime.datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
 
     if os.path.exists(log_file):
         with open(log_file, 'r', encoding='utf-8') as f:
@@ -128,6 +138,8 @@ def log_generation_stats(is_training, num_pairs, parent_dir):
         f.write(log_message)
 
     print(f"Log scritto in: {log_file}")
+    return [num_pairs, total_files, total_size_mb]
+    
 
 def clean_directory(dir_path):
     """Pulisce o crea la directory di output se non esiste."""
@@ -655,10 +667,29 @@ def main():
         if not canzoni_files:
             print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_canzoni}'.")
             sys.exit(1)
+            
+        os.makedirs(os.path.dirname(used_songs_file), exist_ok=True)
+        os.makedirs(os.path.dirname(used_noises_file), exist_ok=True)
+        
+        for file_path in [used_songs_file, used_noises_file]:
+            if not os.path.exists(file_path):
+                with open(file_path, 'w') as f:
+                    pass
 
         # CARICAMENTO RUMORI SOLO DELLA CLASSE SPECIFICATA
         folds = [f"fold{i}" for i in range(1, 11)]
         rumori_per_fold = {}
+        
+        rumori_altre_categorie = []
+        for fold in folds:
+            fold_path = os.path.join(args.path_rumori, fold)
+            if os.path.isdir(fold_path):
+                rumori_altre_categorie += [
+                    os.path.join(fold_path, f)
+                    for f in os.listdir(fold_path)
+                    if is_audio_file(os.path.join(fold_path, f)) and get_noise_category(f) != CLASS_NUM
+                ]
+        print(f"Trovati {len(rumori_altre_categorie)} file di rumore NON della categoria {CLASS_NUM}")
 
         for fold in folds:
             fold_path = os.path.join(args.path_rumori, fold)
@@ -823,27 +854,27 @@ def main():
                     print("  Errore: Impossibile adattare la lunghezza del rumore 1. Passaggio alla coppia successiva.")
                     continue
 
-                # SECONDO RUMORE - SOLO DELLA CATEGORIA CLASS_NUM (per training)
+                # SECONDO RUMORE - NON DELLA CATEGORIA CLASS_NUM (per training)
                 if IS_TRAINING:
-                    available_folds_2 = [fold for fold in rumori_per_fold.keys()
-                                         if rumori_per_fold[fold] and fold != fold1]
-                    if not available_folds_2:
-                        available_folds_2 = [fold for fold in rumori_per_fold.keys() if rumori_per_fold[fold]]
+                    # Raccogli tutti i rumori NON della categoria CLASS_NUM da tutti i fold
+                    rumori_altre_categorie = []
+                    for fold in rumori_per_fold.keys():
+                        fold_path = os.path.join(args.path_rumori, fold)
+                        if os.path.isdir(fold_path):
+                            rumori_altre_categorie += [
+                                os.path.join(fold_path, f)
+                                for f in os.listdir(fold_path)
+                                if is_audio_file(os.path.join(fold_path, f)) and get_noise_category(f) != CLASS_NUM
+                            ]
 
-                    if not available_folds_2:
-                        print("Errore: Non ci sono fold con file di rumore per il secondo rumore.")
-                        continue
-
-                    fold2 = random.choice(available_folds_2)
-
-                    fold2_available = [noise for noise in rumori_per_fold[fold2]
-                                       if os.path.basename(noise) not in used_noises]
-                    if not fold2_available and rumori_per_fold[fold2]:
-                        noise2_path = random.choice(rumori_per_fold[fold2])
-                    elif fold2_available:
-                        noise2_path = random.choice(fold2_available)
+                    # Escludi i rumori già usati in questa canzone
+                    available_noises2 = [noise for noise in rumori_altre_categorie if os.path.basename(noise) not in used_noises]
+                    if not available_noises2 and rumori_altre_categorie:
+                        noise2_path = random.choice(rumori_altre_categorie)
+                    elif available_noises2:
+                        noise2_path = random.choice(available_noises2)
                     else:
-                        print(f"Errore: Nessun rumore disponibile nel fold {fold2}.")
+                        print("Errore: Nessun rumore disponibile NON della categoria CLASS_NUM.")
                         continue
 
                     noise2_basename = os.path.basename(noise2_path)
@@ -867,7 +898,7 @@ def main():
 
                     used_noises.append(noise2_basename)
                     noise2_name = os.path.splitext(os.path.basename(noise2_path))[0]
-                    print(f"  - Rumore 2: {noise2_name} (da {fold2})")
+                    print(f"  - Rumore 2: {noise2_name} (categoria diversa da {CLASS_NUM})")
 
                     print(f"  Caricamento del rumore 2: {noise2_path}")
                     noise2_data = load_audio(noise2_path, use_cuda)
@@ -886,7 +917,7 @@ def main():
                     if noise2_data is None:
                         print("  Errore: Impossibile adattare la lunghezza del rumore 2. Passaggio alla coppia successiva.")
                         continue
-
+                    
                 if os.path.exists(used_noises_file):
                     with open(used_noises_file, 'r') as f:
                         noises_count = len(f.readlines())
@@ -976,9 +1007,11 @@ def main():
 
         print("\nElaborazione completata con successo!")
         parent_dir = os.path.dirname(os.path.dirname(INPUT_DIR))
-        log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)[1][2]
+        stats = log_generation_stats(IS_TRAINING, generated_pairs, parent_dir)
+        print(stats[1], stats[2])
     except (Exception, KeyboardInterrupt):
         print("\nERRORE o interruzione! Ripristino dei file di uso...")
+        traceback.print_exc()
         restore_file(used_songs_file)
         restore_file(used_noises_file)
         sys.exit(1)
