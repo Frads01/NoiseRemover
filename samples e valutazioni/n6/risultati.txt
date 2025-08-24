@@ -1,0 +1,11 @@
+📊 RISULTATI FINALI DEL TEST SET
+200.6s	33	============================================================
+200.6s	34	Totale campioni processati: 1000
+200.6s	35	SNR medio predicted vs clean: 13.10 ± 4.23 dB
+200.6s	36	SNR improvement medio: 2.85 ± 3.54 dB
+200.6s	37	SNR minimo: -6.94 dB
+200.6s	38	SNR massimo: 22.29 dB
+200.6s	39	Mediana SNR: 13.19 dB
+200.6s	40	SSNR medio predicted vs clean: 15.89 ± 5.76 dB
+200.6s	41	SSNR improvement medio: -1.62 ± 4.34 dB
+200.6s	42	Campioni con miglioramento: 887/1000 (88.7%)

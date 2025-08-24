@@ -1,0 +1,146 @@
+N2N SPEECH ORIGINAL
+
+📊 RISULTATI FINALI DEL TEST SET WHITE
+440.0s	63	============================================================
+440.0s	64	Totale campioni processati: 1000
+440.0s	65	SNR medio predicted vs clean: 10.52 ± 0.84 dB
+440.0s	66	SNR improvement medio: -0.30 ± 4.23 dB
+440.0s	67	SNR minimo: 5.21 dB
+440.0s	68	SNR massimo: 11.92 dB
+440.0s	69	Mediana SNR: 10.68 dB
+440.0s	70	SSNR medio predicted vs clean: 9.67 ± 1.68 dB
+440.0s	71	SSNR improvement medio: 0.89 ± 4.12 dB
+440.0s	72	Campioni con miglioramento: 469/1000 (46.9%)
+
+📊 RISULTATI FINALI DEL TEST SET MIXED
+428.7s	63	============================================================
+428.7s	64	Totale campioni processati: 1000
+428.7s	65	SNR medio predicted vs clean: 0.76 ± 0.62 dB
+428.7s	66	SNR improvement medio: -11.96 ± 5.41 dB
+428.7s	67	SNR minimo: -0.02 dB
+428.7s	68	SNR massimo: 3.10 dB
+428.7s	69	Mediana SNR: 0.61 dB
+428.7s	70	SSNR medio predicted vs clean: 0.94 ± 0.69 dB
+428.7s	71	SSNR improvement medio: -10.55 ± 5.59 dB
+428.7s	72	Campioni con miglioramento: 2/1000 (0.2%)
+
+📊 RISULTATI FINALI DEL TEST SET N0
+424.9s	64	============================================================
+424.9s	65	Totale campioni processati: 1000
+424.9s	66	SNR medio predicted vs clean: 2.06 ± 1.66 dB
+424.9s	67	SNR improvement medio: -12.00 ± 5.09 dB
+424.9s	68	SNR minimo: -0.04 dB
+424.9s	69	SNR massimo: 9.25 dB
+424.9s	70	Mediana SNR: 1.58 dB
+424.9s	71	SSNR medio predicted vs clean: 2.00 ± 1.19 dB
+424.9s	72	SSNR improvement medio: -10.29 ± 5.32 dB
+424.9s	73	Campioni con miglioramento: 6/1000 (0.6%)
+
+📊 RISULTATI FINALI DEL TEST SET N1
+319.4s	64	============================================================
+319.4s	65	Totale campioni processati: 713
+319.4s	66	SNR medio predicted vs clean: 1.51 ± 0.69 dB
+319.4s	67	SNR improvement medio: -16.40 ± 7.91 dB
+319.4s	68	SNR minimo: 0.18 dB
+319.4s	69	SNR massimo: 4.00 dB
+319.4s	70	Mediana SNR: 1.33 dB
+319.4s	71	SSNR medio predicted vs clean: 1.32 ± 0.98 dB
+319.4s	72	SSNR improvement medio: -16.01 ± 8.60 dB
+319.4s	73	Campioni con miglioramento: 8/713 (1.1%)
+
+📊 RISULTATI FINALI DEL TEST SET N2
+430.7s	64	============================================================
+430.7s	65	Totale campioni processati: 1000
+430.7s	66	SNR medio predicted vs clean: 0.54 ± 0.53 dB
+430.7s	67	SNR improvement medio: -14.41 ± 6.93 dB
+430.7s	68	SNR minimo: -0.97 dB
+430.7s	69	SNR massimo: 5.50 dB
+430.7s	70	Mediana SNR: 0.45 dB
+430.7s	71	SSNR medio predicted vs clean: 0.77 ± 0.54 dB
+430.7s	72	SSNR improvement medio: -14.69 ± 7.61 dB
+430.7s	73	Campioni con miglioramento: 22/1000 (2.2%)
+
+📊 RISULTATI FINALI DEL TEST SET N3
+436.8s	63	============================================================
+436.8s	64	Totale campioni processati: 1000
+436.8s	65	SNR medio predicted vs clean: 1.59 ± 0.89 dB
+436.8s	66	SNR improvement medio: -10.04 ± 7.59 dB
+436.8s	67	SNR minimo: -1.52 dB
+436.8s	68	SNR massimo: 5.04 dB
+436.8s	69	Mediana SNR: 1.53 dB
+436.8s	70	SSNR medio predicted vs clean: 1.87 ± 1.05 dB
+436.8s	71	SSNR improvement medio: -16.54 ± 9.16 dB
+436.8s	72	Campioni con miglioramento: 75/1000 (7.5%)
+
+📊 RISULTATI FINALI DEL TEST SET N4
+430.1s	64	============================================================
+430.1s	65	Totale campioni processati: 1000
+430.1s	66	SNR medio predicted vs clean: 1.81 ± 1.16 dB
+430.1s	67	SNR improvement medio: -11.97 ± 7.43 dB
+430.1s	68	SNR minimo: -2.36 dB
+430.1s	69	SNR massimo: 8.72 dB
+430.1s	70	Mediana SNR: 1.59 dB
+430.1s	71	SSNR medio predicted vs clean: 1.68 ± 0.99 dB
+430.1s	72	SSNR improvement medio: -11.48 ± 7.48 dB
+430.1s	73	Campioni con miglioramento: 44/1000 (4.4%)
+
+📊 RISULTATI FINALI DEL TEST SET N5
+426.9s	122	============================================================
+426.9s	123	Totale campioni processati: 1000
+426.9s	124	SNR medio predicted vs clean: 1.03 ± 0.73 dB
+426.9s	125	SNR improvement medio: -11.26 ± 7.01 dB
+426.9s	126	SNR minimo: 0.03 dB
+426.9s	127	SNR massimo: 4.10 dB
+426.9s	128	Mediana SNR: 0.90 dB
+426.9s	129	SSNR medio predicted vs clean: 1.01 ± 0.76 dB
+426.9s	130	SSNR improvement medio: -9.61 ± 7.48 dB
+426.9s	131	Campioni con miglioramento: 28/1000 (2.8%)
+
+📊 RISULTATI FINALI DEL TEST SET N6
+435.2s	64	============================================================
+435.2s	65	Totale campioni processati: 1000
+435.2s	66	SNR medio predicted vs clean: 1.68 ± 1.16 dB
+435.2s	67	SNR improvement medio: -8.56 ± 6.19 dB
+435.2s	68	SNR minimo: 0.14 dB
+435.2s	69	SNR massimo: 5.95 dB
+435.2s	70	Mediana SNR: 1.51 dB
+435.2s	71	SSNR medio predicted vs clean: 2.36 ± 1.70 dB
+435.2s	72	SSNR improvement medio: -15.16 ± 8.52 dB
+435.2s	73	Campioni con miglioramento: 45/1000 (4.5%)
+
+📊 RISULTATI FINALI DEL TEST SET N7
+424.2s	64	============================================================
+424.2s	65	Totale campioni processati: 1000
+424.2s	66	SNR medio predicted vs clean: 1.26 ± 1.77 dB
+424.2s	67	SNR improvement medio: -14.15 ± 8.14 dB
+424.2s	68	SNR minimo: -18.69 dB
+424.2s	69	SNR massimo: 6.60 dB
+424.2s	70	Mediana SNR: 0.84 dB
+424.2s	71	SSNR medio predicted vs clean: 1.05 ± 1.36 dB
+424.2s	72	SSNR improvement medio: -13.95 ± 7.68 dB
+424.2s	73	Campioni con miglioramento: 43/1000 (4.3%)
+
+📊 RISULTATI FINALI DEL TEST SET N8
+437.7s	64	============================================================
+437.7s	65	Totale campioni processati: 1000
+437.7s	66	SNR medio predicted vs clean: 2.25 ± 2.11 dB
+437.7s	67	SNR improvement medio: -12.14 ± 7.99 dB
+437.7s	68	SNR minimo: -21.75 dB
+437.7s	69	SNR massimo: 6.50 dB
+437.7s	70	Mediana SNR: 2.01 dB
+437.7s	71	SSNR medio predicted vs clean: 2.18 ± 1.49 dB
+437.7s	72	SSNR improvement medio: -11.88 ± 7.97 dB
+437.7s	73	Campioni con miglioramento: 43/1000 (4.3%)
+
+📊 RISULTATI FINALI DEL TEST SET N9
+438.7s	64	============================================================
+438.7s	65	Totale campioni processati: 1000
+438.7s	66	SNR medio predicted vs clean: 0.52 ± 0.49 dB
+438.7s	67	SNR improvement medio: -12.63 ± 6.97 dB
+438.7s	68	SNR minimo: -3.16 dB
+438.7s	69	SNR massimo: 5.02 dB
+438.7s	70	Mediana SNR: 0.43 dB
+438.7s	71	SSNR medio predicted vs clean: 0.59 ± 0.58 dB
+438.7s	72	SSNR improvement medio: -12.27 ± 6.77 dB
+438.7s	73	Campioni con miglioramento: 30/1000 (3.0%)
+
