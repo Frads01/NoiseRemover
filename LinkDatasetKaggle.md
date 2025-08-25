@@ -23,5 +23,5 @@
 
 <p><strong>Segnale denoised:</strong></p>
 <audio controls>
-  <source src="samples_e_valutazioni\intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).wav" type="audio/wav">
+  <source src="samples_e_valutazioni\white\sample_010_denoised.wav" type="audio/wav">
 </audio>
