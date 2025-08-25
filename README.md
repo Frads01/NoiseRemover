@@ -122,7 +122,19 @@ Utilizzare il notebook [`denoising_entire_song.ipynb`](scripts/denoising_entire_
 ### Casi d’uso (Sample + Distribuzione SNR)
 
 #### Rumore bianco
-![sample_010_plot](samples_e_valutazioni/white/sample_010_plot.png)  
+<table>
+<tr>
+<td rowspan="3"><img src="samples_e_valutazioni/white/sample_010_plot.png" alt="sample_010_plot" width="1000"></td>
+<td><video src="https://github.com/user-attachments/assets/00dd41c6-6adb-4ee6-851f-91f8dae9502c"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/3397a935-d2ee-4130-b09c-9af517585b40"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/8aa3a927-8e41-4bf2-a0dc-c228f6a09fd7"> </td>
+</tr>
+</table>
+
 ![sample_348_plot](samples_e_valutazioni/white/sample_348_plot.png)  
 ![sample_1000_plot](samples_e_valutazioni/white/sample_1000_plot.png)  
 ![snr_dist_white](samples_e_valutazioni/white/snr_distributions.png)  
