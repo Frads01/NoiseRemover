@@ -21,125 +21,107 @@ pip install -r requirements.txt
 
 ## Generazione dei dataset
 
-Per generare un dataset con soli rumori reali:
+* **Dataset utilizzati**: [UrbanSound8k](https://urbansounddataset.weebly.com/urbansound8k.html), [musdb18](https://sigsep.github.io/datasets/musdb.html)
 
-```bash
-python merger.py --path-songs <dir_canzoni> --path-noises <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
-```
-
-- `--path-songs`: Directory delle canzoni in formato MP4 per l'elaborazione.
-- `--path-noises`: Directory contenente file di rumore WAV, suddivisi in sottocartelle fold1,...,fold10.
-- `--iter-songs`: Numero massimo di canzoni da processare.
-- `--iter-noise`: Numero massimo di coppie di rumori da sovrapporre per ogni canzone.
-- `--use-cuda`: Flag opzionale per usare la GPU CUDA, se disponibile.
-- `--input-dir`: Directory dove salvare i file audio di input (canzone + rumore 1).
-- `--target-dir`: Directory dove salvare i file audio target (canzone + rumore 2 o canzone pulita).
+* **[Dataset generati](LinkDatasetKaggle.md)**
 
 ---
-Per generare un dataset per una specifica classe N:
 
-```bash
-python merger_class.py --class-num <numero_categoria> --path-canzoni <dir_canzoni> --path-rumori <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
-```
-- `--class-num`: Numero intero della categoria rumore (0-9) da includere nel dataset.
-- `--path-songs`: Directory delle canzoni musdb18.
-- `--path-noises`: Directory dei rumori UrbanSound8K.
-- `--iter-songs`: Numero massimo di canzoni da usare.
-- `--iter-noise`: Numero massimo di rumori da sovrapporre per canzone.
-- `--use-cuda`: Usa GPU CUDA se disponibile.
-- `--input-dir`: Directory output per i file INPUT.
-- `--target-dir`: Directory output per i file TARGET.
+- Per generare un dataset con soli rumori reali:
 
----
-Per generare un dataset con rumori reali e rumore bianco:
+    ```bash
+    python merger.py --path-songs <dir_canzoni> --path-noises <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
+    ```
 
-```bash
-python merger_mixed_white.py --path-songs <dir_canzoni> --path-noises <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
-```
+    - `--path-songs`: Directory delle canzoni in formato MP4 per l'elaborazione.
+    - `--path-noises`: Directory contenente file di rumore WAV, suddivisi in sottocartelle fold1,...,fold10.
+    - `--iter-songs`: Numero massimo di canzoni da processare.
+    - `--iter-noise`: Numero massimo di coppie di rumori da sovrapporre per ogni canzone.
+    - `--use-cuda`: Flag opzionale per usare la GPU CUDA, se disponibile.
+    - `--input-dir`: Directory dove salvare i file audio di input (canzone + rumore 1).
+    - `--target-dir`: Directory dove salvare i file audio target (canzone + rumore 2 o canzone pulita).
 
-- `--path-songs`: Directory delle canzoni.
-- `--path-noises`: Directory contenente i file di rumore RAW (UVSound8K).
-- `--iter-songs`: Numero di canzoni per l'elaborazione.
-- `--iter-noise`: Numero di coppie di rumori per canzone.
-- `--use-cuda`: Usa GPU CUDA se disponibile.
-- `--input-dir`: Directory output per file INPUT.
-- `--target-dir`: Directory output per file TARGET.
+- Per generare un dataset per una specifica classe N:
 
----
-Per generare un dataset con solo rumore bianco:
+    ```bash
+    python merger_class.py --class-num <numero_categoria> --path-canzoni <dir_canzoni> --path-rumori <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
+    ```
+    - `--class-num`: Numero intero della categoria rumore (0-9) da includere nel dataset.
+    - `--path-songs`: Directory delle canzoni musdb18.
+    - `--path-noises`: Directory dei rumori UrbanSound8K.
+    - `--iter-songs`: Numero massimo di canzoni da usare.
+    - `--iter-noise`: Numero massimo di rumori da sovrapporre per canzone.
+    - `--use-cuda`: Usa GPU CUDA se disponibile.
+    - `--input-dir`: Directory output per i file INPUT.
+    - `--target-dir`: Directory output per i file TARGET.
 
-```bash
-python merger_white.py --path-songs <dir_canzoni> --iter-songs <num_canzoni> --iter-white-noise <num_rumori_bianchi_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
-```
+- Per generare un dataset con rumori reali e rumore bianco:
 
-- `--path-songs`: Directory delle canzoni (MP4).
-- `--iter-songs`: Numero di canzoni da elaborare.
-- `--iter-white-noise`: Numero di coppie di rumore bianco generate per canzone.
-- `--use-cuda`: Usa la GPU CUDA se disponibile.
-- `--input-dir`: Directory per salvare i file INPUT.
-- `--target-dir`: Directory per salvare i file TARGET.
+    ```bash
+    python merger_mixed_white.py --path-songs <dir_canzoni> --path-noises <dir_rumori> --iter-songs <num_canzoni> --iter-noise <num_rumori_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
+    ```
 
----
-Per l'analisi di correlazione tra coppie di file audio WAV:
+    - `--path-songs`: Directory delle canzoni.
+    - `--path-noises`: Directory contenente i file di rumore RAW (UVSound8K).
+    - `--iter-songs`: Numero di canzoni per l'elaborazione.
+    - `--iter-noise`: Numero di coppie di rumori per canzone.
+    - `--use-cuda`: Usa GPU CUDA se disponibile.
+    - `--input-dir`: Directory output per file INPUT.
+    - `--target-dir`: Directory output per file TARGET.
 
-```bash
-python correlation.py <path_audio1> <path_audio2> <output_file>
-```
+- Per generare un dataset con solo rumore bianco:
 
-### Parametri
+    ```bash
+    python merger_white.py --path-songs <dir_canzoni> --iter-songs <num_canzoni> --iter-white-noise <num_rumori_bianchi_per_canzone> --use-cuda --input-dir <dir_output_input> --target-dir <dir_output_target>
+    ```
 
-- `<path_audio1>`: Percorso della prima directory contenente file audio WAV.
-- `<path_audio2>`: Percorso della seconda directory contenente file audio WAV.
-- `<output_file>`: Percorso del file di output in cui salvare i risultati dell'analisi.
+    - `--path-songs`: Directory delle canzoni (MP4).
+    - `--iter-songs`: Numero di canzoni da elaborare.
+    - `--iter-white-noise`: Numero di coppie di rumore bianco generate per canzone.
+    - `--use-cuda`: Usa la GPU CUDA se disponibile.
+    - `--input-dir`: Directory per salvare i file INPUT.
+    - `--target-dir`: Directory per salvare i file TARGET.
+
+- Per l'analisi di correlazione tra coppie di file audio WAV:
+
+    ```bash
+    python correlation.py <path_audio1> <path_audio2> <output_file>
+    ```
+
+    - `<path_audio1>`: Percorso della prima directory contenente file audio WAV.
+    - `<path_audio2>`: Percorso della seconda directory contenente file audio WAV.
+    - `<output_file>`: Percorso del file di output in cui salvare i risultati dell'analisi.
 
 ---
 
 ## Allenare un nuovo modello
 
-Allenamento su dataset generato:
-
-```
-python train.py --dataset /path/to/dataset --epochs 30 --batch-size 4 --lr 1e-4
-```
-
-Caratteristiche modello:
-- **DCUnet-20** (Deep Complex U-Net con 20 layer, encoder-decoder, convoluzioni complesse)
-- Funzione di attivazione: Leaky Complex ReLU
-- Loss: Weighted-SDR Loss (possibile combinazione con spectral loss / MSE loss)
-- Batch normalization complessa
-- Ottimizzazione: AdamW, LR scheduler OneCycleLR
-
-Parametri ottimizzati tramite grid search grossolana, con test approfonditi su batch_size, learning rate, varianti di loss e scheduler. Nel file `train.py` sono descritte le opzioni di configurazione principali.
+Per allenare un nuovo modello, è disponibile il notebook [`NoiseRemover.ipynb`](NoiseRemover.ipynb). E' necessario dapprima generare un nuovo dataset (singola classe, rumore bianco o mixed). Se utilizzate Windows, impostare `soundfile` come backend torchaudio. Se utilizzate Linux, impostare `sox` come backend torchaudio. Il file .pth dei pesi viene salvato per ogni epoca di addestramento nella directory `Weights`.
 
 ---
 
 ## Verifica dell'inferenza del modello su pesi preaddestrati
 
-Per testare la qualità di pesi già allenati su un file audio:
-
-```
-python inference.py --weights checkpoints/model_final.pt --input input_noisy.wav --output output_denoised.wav
-```
-
-Output: file audio denoised, valutabile soggettivamente e oggettivamente con le metriche riportate di seguito.
+Abbiamo addestrato il nostro modello per tutte le 10 classi di UrbanSound8k (da 0 a 9) e il rumore bianco gaussiano. Tutti i pesi del nostro modello sono salvati nella directory [`pretrained weights`](pretrained_weights).
+Nel file [`NoiseRemover.ipynb`](NoiseRemover.ipynb), selezionare il file `.pth` dei pesi per il modello da utilizzare. Indicare le cartelle di test contenenti l'audio che si desidera pulire. Verranno calcolate anche le metriche di qualità audio. I file wav risultanti verranno salvati nella directory `Samples`.
 
 ---
 
-## Esempi
+## Ridurre il rumore di un intero brano
 
-Esempio di miglioramento SNR dopo il denoising:
+Per ridurre il rumore di un intero brano, è possibile utilizzare il notebook [`denoising_entire_song.ipynb`](scripts\denoising_entire_song.ipynb) modificando le costanti PATH all'inizio, sostituendo `MODEL_PATH`, `INPUT_AUDIO_PATH` ed eventualmente `OUTPUT_AUDIO_PATH` con il path dei pesi del rumore che si vuol eliminare, del file di input e del file di output.
 
-- **SNR Improvement medio finale:** **+7.54 dB** sul dataset di test rispetto al segnale rumoroso
-- **Metriche:** SNR assoluto, SNR improvement, SSNR (segmental SNR), SSNR improvement
+---
 
-Tabella (estratto finale):
+## Usare un brano come dataset di partenza
 
-| Rumore         | Modello        | SNR [dB]         | Miglioramento SNR [dB] |
-|----------------|----------------|------------------|------------------------|
-| Rumore bianco  | N2Nmusic       | 18.49 ± 3.65     |  7.67 ± 2.34           |
-| Mixed/classi   | N2Nmusic       | ≈0               | ≈0                     |
+Il notebook [`generate_best_segments.ipynb`](scripts\generate_best_segments.ipynb) permette di salvare in una cartella i segmenti che combinano in maniera ottimale correlazione e diversità spettrale, ed eventualmente utilizzarlo come nuovo dataset di partenza.
 
-I risultati confermano l’efficacia dell’approccio anche in assenza di dati target puliti.
+---
+
+## Esempi e risultati
+
+@TODO
 
 ---
 
