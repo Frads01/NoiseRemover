@@ -1,4 +1,3 @@
-
 # Riduzione del rumore delle canzoni senza dati di addestramento puliti
 
 ## Descrizione
@@ -119,12 +118,10 @@ Utilizzare il notebook [`denoising_entire_song.ipynb`](scripts/denoising_entire_
 
 ## Esempi e Risultati
 
-### Casi d’uso (Sample + Distribuzione SNR)
-
-#### Rumore bianco
+### Rumore bianco
 <table>
 <tr>
-<td rowspan="3"><img src="samples_e_valutazioni/white/sample_010_plot.png" alt="sample_010_plot" width="1000"></td>
+<td rowspan="3" ><p align="center">Sample 10</p><img src="samples_e_valutazioni/white/sample_010_plot.png" alt="sample_010_plot"></td>
 <td><video src="https://github.com/user-attachments/assets/00dd41c6-6adb-4ee6-851f-91f8dae9502c"> </td>
 </tr>
 <tr>
@@ -135,14 +132,77 @@ Utilizzare il notebook [`denoising_entire_song.ipynb`](scripts/denoising_entire_
 </tr>
 </table>
 
-![sample_348_plot](samples_e_valutazioni/white/sample_348_plot.png)  
-![sample_1000_plot](samples_e_valutazioni/white/sample_1000_plot.png)  
+<table>
+<tr>
+<td rowspan="3" ><p align="center">Sample 348</p><img src="samples_e_valutazioni/white/sample_348_plot.png" alt="sample_348_plot"></td>
+<td><video src="https://github.com/user-attachments/assets/f7fbc247-3c46-4cb3-acfa-5f9f3db65f9b"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/b3f1ce07-d663-4be8-abcf-584e41b75505"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/e2abd57a-a3e3-4032-bccd-efb3e4424a34"> </td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td rowspan="3" ><p align="center">Sample 1000</p><img src="samples_e_valutazioni/white/sample_1000_plot.png" alt="sample_1000_plot"></td>
+<td><video src="https://github.com/user-attachments/assets/816dc63d-1c17-4553-91cc-17b4694a50a9"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/005fde8a-2ac7-4def-a118-e85c6f26101c"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/05e5dfa7-2bd5-49b7-aa21-44c3f66ed10c"> </td>
+</tr>
+</table>
+
+#### Distribuzione SNR di tutto il testset
 ![snr_dist_white](samples_e_valutazioni/white/snr_distributions.png)  
 
-#### Mixed
-![sample_010_plot](samples_e_valutazioni/mixed/sample_010_plot.png)  
-![sample_348_plot](samples_e_valutazioni/mixed/sample_348_plot.png)  
-![sample_1000_plot](samples_e_valutazioni/mixed/sample_1000_plot.png)  
+### Mixed
+<table>
+<tr>
+<td rowspan="3" ><p align="center">Sample 10</p><img src="samples_e_valutazioni/mixed/sample_010_plot.png" alt="sample_010_plot"></td>
+<td><video src="https://github.com/user-attachments/assets/dc617e0f-ee3b-4b82-b509-9bfaaeb25c7f"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/efc8d061-f747-4a0e-ace6-c4532e24034d"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/73e5d4ed-5307-4a38-9b58-f3d79fb2ced3"> </td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td rowspan="3" ><p align="center">Sample 348</p><img src="samples_e_valutazioni/mixed/sample_348_plot.png" alt="sample_348_plot"></td>
+<td><video src="https://github.com/user-attachments/assets/66ac4fd0-0e13-4910-b274-b670c45dd902"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/f3a75710-82b8-4910-a2b8-623bae6f8a38"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/2e301bec-ab9f-43ec-889f-8a5943a24e64"> </td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td rowspan="3" ><p align="center">Sample 1000</p><img src="samples_e_valutazioni/mixed/sample_1000_plot.png" alt="sample_1000_plot"></td>
+<td><video src="https://github.com/user-attachments/assets/320cf993-4dbc-4a8f-a462-cd0b24bed1c6"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/1a5c3888-db99-4433-8592-b445e3e23e93"> </td>
+</tr>
+<tr>
+<td><video src="https://github.com/user-attachments/assets/d345c531-a236-42f6-a555-59fbf7c1e5d3"> </td>
+</tr>
+</table>
+
+
+#### Distribuzione SNR di tutto il testset
 ![snr_dist_mixed](samples_e_valutazioni/mixed/snr_distributions.png)  
 
 ### Prestazioni rispetto alla rete di riferimento
