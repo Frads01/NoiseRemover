@@ -22,6 +22,5 @@
 * TUTTE LE DIVERSE CLASSI: [https://www.kaggle.com/datasets/frads01/musdb8k-class]()
 
 <p><strong>Segnale denoised:</strong></p>
-<audio controls>
-  <source src="samples_e_valutazioni\white\sample_010_denoised.wav" type="audio/wav">
-</audio>
+<audio controls="1" src="samples_e_valutazioni\white\sample_010_denoised.wav">Your browser does not support the audio tag.</audio>
+
