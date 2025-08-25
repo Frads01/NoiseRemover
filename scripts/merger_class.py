@@ -22,7 +22,8 @@ from pydub import effects
 # === PARAMETRI GLOBALI ===
 
 IS_TRAINING = True
-CLASS_NUM = 9
+DEF_CLASS_NUM = 9
+CLASS_NUM = DEF_CLASS_NUM
 # 0 = air_conditioner
 # 1 = car_horn
 # 2 = children_playing
@@ -618,8 +619,9 @@ def main():
 
     try:
         parser = argparse.ArgumentParser(description='Script per sovrapporre file audio di rumore a file audio di canzoni.')
-        parser.add_argument('--path-canzoni', type=str, default=SONGS_DIR)
-        parser.add_argument('--path-rumori', type=str, default=NOISE_DIR)
+        parser.add_argument('--class-num', type=int, default=DEF_CLASS_NUM, choices=range(0, 10))
+        parser.add_argument('--path-songs', type=str, default=SONGS_DIR)
+        parser.add_argument('--path-noises', type=str, default=NOISE_DIR)
         parser.add_argument('--iter-songs', type=int, default=ITER_SONGS_MAX)
         parser.add_argument('--iter-noise', type=int, default=ITER_NOISE_MAX)
         parser.add_argument('--use-cuda', action='store_true')
@@ -627,17 +629,20 @@ def main():
         parser.add_argument('--target-dir', type=str, default=TARGET_DIR)
         args = parser.parse_args()
 
-        args.path_canzoni = fix_path_separators(args.path_canzoni)
-        args.path_rumori = fix_path_separators(args.path_rumori)
+        args.path_songs = fix_path_separators(args.path_songs)
+        args.path_noises = fix_path_separators(args.path_noises)
         args.input_dir = fix_path_separators(args.input_dir)
         args.target_dir = fix_path_separators(args.target_dir)
+        
+        global CLASS_NUM
+        CLASS_NUM = args.class_num
 
-        if not os.path.isdir(args.path_canzoni):
-            print(f"Errore: La directory delle canzoni '{args.path_canzoni}' non esiste.")
+        if not os.path.isdir(args.path_songs):
+            print(f"Errore: La directory delle canzoni '{args.path_songs}' non esiste.")
             sys.exit(1)
 
-        if not os.path.isdir(args.path_rumori):
-            print(f"Errore: La directory dei rumori '{args.path_rumori}' non esiste.")
+        if not os.path.isdir(args.path_noises):
+            print(f"Errore: La directory dei rumori '{args.path_noises}' non esiste.")
             sys.exit(1)
 
         if not verify_ffmpeg():
@@ -662,10 +667,10 @@ def main():
 
         print("Ricerca dei file di canzoni e rumori...")
 
-        canzoni_files = [os.path.join(args.path_canzoni, f) for f in os.listdir(args.path_canzoni)
-                         if is_audio_file(os.path.join(args.path_canzoni, f))]
+        canzoni_files = [os.path.join(args.path_songs, f) for f in os.listdir(args.path_songs)
+                         if is_audio_file(os.path.join(args.path_songs, f))]
         if not canzoni_files:
-            print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_canzoni}'.")
+            print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_songs}'.")
             sys.exit(1)
             
         os.makedirs(os.path.dirname(used_songs_file), exist_ok=True)
@@ -682,7 +687,7 @@ def main():
         
         rumori_altre_categorie = []
         for fold in folds:
-            fold_path = os.path.join(args.path_rumori, fold)
+            fold_path = os.path.join(args.path_noises, fold)
             if os.path.isdir(fold_path):
                 rumori_altre_categorie += [
                     os.path.join(fold_path, f)
@@ -692,7 +697,7 @@ def main():
         print(f"Trovati {len(rumori_altre_categorie)} file di rumore NON della categoria {CLASS_NUM}")
 
         for fold in folds:
-            fold_path = os.path.join(args.path_rumori, fold)
+            fold_path = os.path.join(args.path_noises, fold)
             if os.path.isdir(fold_path):
                 rumori_per_fold[fold] = [
                     os.path.join(fold_path, f)
@@ -859,7 +864,7 @@ def main():
                     # Raccogli tutti i rumori NON della categoria CLASS_NUM da tutti i fold
                     rumori_altre_categorie = []
                     for fold in rumori_per_fold.keys():
-                        fold_path = os.path.join(args.path_rumori, fold)
+                        fold_path = os.path.join(args.path_noises, fold)
                         if os.path.isdir(fold_path):
                             rumori_altre_categorie += [
                                 os.path.join(fold_path, f)

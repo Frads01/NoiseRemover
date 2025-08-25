@@ -864,9 +864,9 @@ def main():
         ensure_tracking_files_exist()
         # Parsing degli argomenti
         parser = argparse.ArgumentParser(description='Script per sovrapporre file audio di rumore o rumore bianco a file audio di canzoni.')
-        parser.add_argument('--path-canzoni', type=str, default=SONGS_DIR,
+        parser.add_argument('--path-songs', type=str, default=SONGS_DIR,
                             help='Percorso alla directory contenente i file audio delle canzoni (MP4).')
-        parser.add_argument('--path-rumori', type=str, default=NOISE_DIR,
+        parser.add_argument('--path-noises', type=str, default=NOISE_DIR,
                             help='Percorso alla directory contenente i file audio di rumore (WAV).')
         parser.add_argument('--iter-songs', type=int, default=ITER_SONGS_MAX,
                             help=f'Numero di canzoni da processare (default: {ITER_SONGS_MAX}).')
@@ -879,24 +879,24 @@ def main():
         args = parser.parse_args()
         
         # Correggi i percorsi per il sistema operativo corrente
-        args.path_canzoni = fix_path_separators(args.path_canzoni)
-        args.path_rumori = fix_path_separators(args.path_rumori)
+        args.path_songs = fix_path_separators(args.path_songs)
+        args.path_noises = fix_path_separators(args.path_noises)
         args.input_dir = fix_path_separators(args.input_dir)
         args.target_dir = fix_path_separators(args.target_dir)
         
         # Verifica dell'esistenza delle directory
-        if not os.path.isdir(args.path_canzoni):
-            print(f"Errore: La directory delle canzoni '{args.path_canzoni}' non esiste.")
+        if not os.path.isdir(args.path_songs):
+            print(f"Errore: La directory delle canzoni '{args.path_songs}' non esiste.")
             sys.exit(1)
         
         # Verifica della directory rumori (opzionale se usiamo solo rumore bianco)
         noise_files_available = False
         rumori_per_fold = {}
-        if os.path.isdir(args.path_rumori):
+        if os.path.isdir(args.path_noises):
             # Liste dei file di rumore per ogni fold
             folds = [f"fold{i}" for i in range(1, 11)]
             for fold in folds:
-                fold_path = os.path.join(args.path_rumori, fold)
+                fold_path = os.path.join(args.path_noises, fold)
                 if os.path.isdir(fold_path):
                     rumori_per_fold[fold] = [os.path.join(fold_path, f) for f in os.listdir(fold_path)
                                              if is_audio_file(os.path.join(fold_path, f))]
@@ -905,7 +905,7 @@ def main():
                         noise_files_available = True
         
         if not noise_files_available:
-            print(f"Avviso: Nessun file di rumore trovato in '{args.path_rumori}'. Verrà utilizzato solo rumore bianco.")
+            print(f"Avviso: Nessun file di rumore trovato in '{args.path_noises}'. Verrà utilizzato solo rumore bianco.")
         
         # Verifica della presenza di ffmpeg
         if not verify_ffmpeg():
@@ -934,11 +934,11 @@ def main():
         print("Ricerca dei file di canzoni...")
         
         # Lista dei file delle canzoni
-        canzoni_files = [os.path.join(args.path_canzoni, f) for f in os.listdir(args.path_canzoni)
-                         if is_audio_file(os.path.join(args.path_canzoni, f))]
+        canzoni_files = [os.path.join(args.path_songs, f) for f in os.listdir(args.path_songs)
+                         if is_audio_file(os.path.join(args.path_songs, f))]
         
         if not canzoni_files:
-            print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_canzoni}'.")
+            print(f"Errore: Nessun file audio trovato nella directory delle canzoni '{args.path_songs}'.")
             sys.exit(1)
         
         # Counter delle coppie generate

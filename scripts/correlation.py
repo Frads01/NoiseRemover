@@ -5,11 +5,8 @@ import matplotlib.pyplot as plt
 import librosa  # Necessario per il ricampionamento
 import os
 import glob
-
-# --- COSTANTI PER I PERCORSI DEI FILE ---
-PATH_AUDIO_1 = 'dataset/train/input/'
-PATH_AUDIO_2 = 'dataset/train/target/'
-OUTPUT_FILE = 'dataset/correlazioni_risultati.txt'
+import argparse
+import datetime
 
 
 # --- CLASSE PER GESTIRE SEGNALI AUDIO ---
@@ -44,7 +41,7 @@ class AudioSignal:
             return AudioSignal(self.data.copy(), self.rate, self.path + " (ricampionamento fallito)")
 
 
-# --- FUNZIONE PER CARICARE FILE WAV IN OGGETTI AudioSignal ---
+# --- FUNZIONE PER CARICARE FILE WAV ---
 def load_wav_to_signal(path):
     try:
         rate, data = wav.read(path)
@@ -60,7 +57,6 @@ def load_wav_to_signal(path):
             max_abs_val = np.max(np.abs(data))
             if max_abs_val > 1.0 and max_abs_val < 2.0 ** 15:
                 data /= max_abs_val
-
         return AudioSignal(data, rate, path)
     except FileNotFoundError:
         print(f"Errore: File '{path}' non trovato.")
@@ -157,10 +153,6 @@ def calculate_correlation_analysis(audio_signal1, audio_signal2):
         tolerance = 1e-6
         are_uncorrelated = abs(covariance) < tolerance
 
-        # 9. VERIFICA PROPRIETÀ TEORICHE
-        # Per segnali reali: Rx(-τ) = Rx(τ) (simmetria)
-        # Rx(0) dovrebbe essere il massimo dell'autocorrelazione
-
         results = {
             'correlation_coefficient': correlation_coefficient,
             'covariance': covariance,
@@ -187,54 +179,39 @@ def calculate_correlation_analysis(audio_signal1, audio_signal2):
         return None
 
 
-# --- FUNZIONE PER OTTENERE LISTA ORDINATA DI FILE ---
+# --- FUNZIONE PER OTTENERE LISTA ORDINATA DI FILE WAV ---
 def get_sorted_audio_files(directory):
-    """
-    Ottiene una lista ordinata di file audio (.wav) da una directory.
-    """
     if not os.path.exists(directory):
         print(f"Errore: Directory '{directory}' non trovata.")
         return []
-
-    # Cerca file .wav nella directory
     pattern = os.path.join(directory, "*.wav")
     files = glob.glob(pattern)
-
-    # Ordina i file per nome
     files.sort()
-
     return files
 
 
 # --- FUNZIONE PER PROCESSARE TUTTE LE COPPIE ---
-def process_all_pairs():
-    """
-    Processa tutte le coppie di file dalle due cartelle e salva i risultati.
-    Implementa un'analisi completa basata sui principi teorici di correlazione.
-    """
-    print(f"Ricerca file in: {PATH_AUDIO_1}")
-    files1 = get_sorted_audio_files(PATH_AUDIO_1)
+def process_all_pairs(path_audio1, path_audio2, output_file):
+    print(f"Ricerca file in: {path_audio1}")
+    files1 = get_sorted_audio_files(path_audio1)
 
-    print(f"Ricerca file in: {PATH_AUDIO_2}")
-    files2 = get_sorted_audio_files(PATH_AUDIO_2)
+    print(f"Ricerca file in: {path_audio2}")
+    files2 = get_sorted_audio_files(path_audio2)
 
     if not files1:
-        print(f"Nessun file .wav trovato in {PATH_AUDIO_1}")
+        print(f"Nessun file .wav trovato in {path_audio1}")
         return
-
     if not files2:
-        print(f"Nessun file .wav trovato in {PATH_AUDIO_2}")
+        print(f"Nessun file .wav trovato in {path_audio2}")
         return
 
-    print(f"Trovati {len(files1)} file in PATH_AUDIO_1")
-    print(f"Trovati {len(files2)} file in PATH_AUDIO_2")
+    print(f"Trovati {len(files1)} file in {path_audio1}")
+    print(f"Trovati {len(files2)} file in {path_audio2}")
 
-    # Determina il numero minimo di file per processare le coppie
     num_pairs = min(len(files1), len(files2))
     print(f"Processando {num_pairs} coppie di file...")
 
-    # Crea la directory di output se non esiste
-    output_dir = os.path.dirname(OUTPUT_FILE)
+    output_dir = os.path.dirname(output_file)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -245,7 +222,6 @@ def process_all_pairs():
         file1 = files1[i]
         file2 = files2[i]
 
-        # Estrai il nome del file senza estensione per l'identificatore
         filename1 = os.path.splitext(os.path.basename(file1))[0]
         filename2 = os.path.splitext(os.path.basename(file2))[0]
 
@@ -253,7 +229,6 @@ def process_all_pairs():
         print(f"  File 1: {filename1}")
         print(f"  File 2: {filename2}")
 
-        # Carica i segnali audio
         audio_signal_1 = load_wav_to_signal(file1)
         audio_signal_2 = load_wav_to_signal(file2)
 
@@ -261,11 +236,9 @@ def process_all_pairs():
             analysis_results = calculate_correlation_analysis(audio_signal_1, audio_signal_2)
 
             if analysis_results is not None:
-                # Estrai l'identificatore come richiesto
                 try:
                     pair_id = filename1.split("-")[1]
                 except IndexError:
-                    # Fallback se il formato del nome non è come aspettato
                     pair_id = filename1
 
                 correlation = analysis_results['correlation_coefficient']
@@ -274,7 +247,6 @@ def process_all_pairs():
                 power_x2 = analysis_results['power_x2']
                 are_uncorrelated = analysis_results['are_uncorrelated']
 
-                # Crea la riga di risultato con tutte le informazioni
                 result_line = (f"{pair_id} - Correlazione: {correlation:.6f}, "
                                f"Covarianza: {covariance:.6f}, "
                                f"Incorrelati: {'Sì' if are_uncorrelated else 'No'}, "
@@ -283,7 +255,6 @@ def process_all_pairs():
 
                 results.append(result_line)
 
-                # Salva anche i risultati dettagliati per analisi successive
                 detailed_result = {
                     'pair_id': pair_id,
                     'filename1': filename1,
@@ -315,10 +286,8 @@ def process_all_pairs():
             results.append(result_line)
             print(f"  Errore nel caricamento dei file")
 
-    # Salva i risultati nel file di output
     try:
-        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-            # Intestazione con informazioni teoriche
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write("# Risultati Analisi di Correlazione Audio\n")
             f.write("# Basato su teoria della correlazione per processi stocastici\n")
             f.write("#\n")
@@ -329,19 +298,16 @@ def process_all_pairs():
             f.write("# - Potenza_X1: E{x1²} = Rx1(0) (autocorrelazione a τ=0)\n")
             f.write("# - Potenza_X2: E{x2²} = Rx2(0) (autocorrelazione a τ=0)\n")
             f.write("#\n")
-            f.write(
-                "# FORMATO: ID_COPPIA - Correlazione: VALORE, Covarianza: VALORE, Incorrelati: SÌ/NO, Potenza_X1: VALORE, Potenza_X2: VALORE\n")
+            f.write("# FORMATO: ID_COPPIA - Correlazione: VALORE, Covarianza: VALORE, Incorrelati: SÌ/NO, Potenza_X1: VALORE, Potenza_X2: VALORE\n")
             f.write("#\n")
-            f.write(f"# Generato il: 2025-06-05 11:10:51 UTC\n")
-            f.write(f"# Utente: Frads01\n")
-            f.write(f"# Directory input: {PATH_AUDIO_1}\n")
-            f.write(f"# Directory target: {PATH_AUDIO_2}\n")
+            f.write(f"# Generato il: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+            f.write(f"# Directory input: {path_audio1}\n")
+            f.write(f"# Directory target: {path_audio2}\n")
             f.write("#\n")
 
             for result in results:
                 f.write(result + '\n')
 
-            # Aggiungi statistiche finali al file
             f.write("\n# === STATISTICHE FINALI ===\n")
 
             successful_correlations = [r for r in results if not ('ERRORE' in r)]
@@ -380,46 +346,42 @@ def process_all_pairs():
                     powers_x1_array = np.array(powers_x1_values)
                     powers_x2_array = np.array(powers_x2_values)
 
-                    f.write(f"#\n")
-                    f.write(f"# STATISTICHE CORRELAZIONI:\n")
+                    f.write("#\n")
+                    f.write("# STATISTICHE CORRELAZIONI:\n")
                     f.write(f"# Media: {np.mean(correlations_array):.6f}\n")
                     f.write(f"# Mediana: {np.median(correlations_array):.6f}\n")
                     f.write(f"# Deviazione standard: {np.std(correlations_array):.6f}\n")
                     f.write(f"# Massimo: {np.max(correlations_array):.6f}\n")
                     f.write(f"# Minimo: {np.min(correlations_array):.6f}\n")
 
-                    f.write(f"#\n")
-                    f.write(f"# STATISTICHE COVARIANZE:\n")
+                    f.write("#\n")
+                    f.write("# STATISTICHE COVARIANZE:\n")
                     f.write(f"# Media: {np.mean(covariances_array):.6f}\n")
                     f.write(f"# Deviazione standard: {np.std(covariances_array):.6f}\n")
                     f.write(f"# Massimo: {np.max(covariances_array):.6f}\n")
                     f.write(f"# Minimo: {np.min(covariances_array):.6f}\n")
 
-                    f.write(f"#\n")
-                    f.write(f"# STATISTICHE POTENZE:\n")
-                    f.write(
-                        f"# Potenza X1 - Media: {np.mean(powers_x1_array):.6f}, Dev.Std: {np.std(powers_x1_array):.6f}\n")
-                    f.write(
-                        f"# Potenza X2 - Media: {np.mean(powers_x2_array):.6f}, Dev.Std: {np.std(powers_x2_array):.6f}\n")
+                    f.write("#\n")
+                    f.write("# STATISTICHE POTENZE:\n")
+                    f.write(f"# Potenza X1 - Media: {np.mean(powers_x1_array):.6f}, Dev.Std: {np.std(powers_x1_array):.6f}\n")
+                    f.write(f"# Potenza X2 - Media: {np.mean(powers_x2_array):.6f}, Dev.Std: {np.std(powers_x2_array):.6f}\n")
 
-                    # Analisi qualitativa
                     high_corr = np.sum(correlations_array > 0.8)
                     medium_corr = np.sum((correlations_array > 0.5) & (correlations_array <= 0.8))
                     low_corr = np.sum(correlations_array <= 0.5)
                     near_zero = np.sum(np.abs(correlations_array) < 0.1)
 
-                    f.write(f"#\n")
-                    f.write(f"# INTERPRETAZIONE TEORICA:\n")
+                    f.write("#\n")
+                    f.write("# INTERPRETAZIONE TEORICA:\n")
                     f.write(f"# Coppie altamente correlate (>0.8): {high_corr}\n")
                     f.write(f"# Coppie moderatamente correlate (0.5-0.8): {medium_corr}\n")
                     f.write(f"# Coppie debolmente correlate (≤0.5): {low_corr}\n")
                     f.write(f"# Coppie praticamente incorrelate (|r|<0.1): {near_zero}\n")
                     f.write(f"# Coppie statisticamente incorrelate (test covarianza): {uncorrelated_count}\n")
 
-        print(f"\nRisultati salvati in: {OUTPUT_FILE}")
+        print(f"\nRisultati salvati in: {output_file}")
         print(f"Totale coppie processate: {len(results)}")
 
-        # Mostra un riassunto statistico dei risultati
         successful_correlations = [r for r in results if not ('ERRORE' in r)]
         print(f"Correlazioni calcolate con successo: {len(successful_correlations)}")
 
@@ -441,7 +403,6 @@ def process_all_pairs():
                 print(f"Correlazione massima: {np.max(correlations_array):.6f}")
                 print(f"Correlazione minima: {np.min(correlations_array):.6f}")
 
-                # Analisi qualitativa basata sui principi teorici
                 high_corr = np.sum(correlations_array > 0.8)
                 medium_corr = np.sum((correlations_array > 0.5) & (correlations_array <= 0.8))
                 low_corr = np.sum(correlations_array <= 0.5)
@@ -451,7 +412,6 @@ def process_all_pairs():
                 print(f"Coppie moderatamente correlate (0.5-0.8): {medium_corr}")
                 print(f"Coppie debolmente correlate (≤0.5): {low_corr}")
 
-                # Test di incorrelazione
                 near_zero = np.sum(np.abs(correlations_array) < 0.1)
                 print(f"Coppie praticamente incorrelate (|r|<0.1): {near_zero}")
 
@@ -461,25 +421,29 @@ def process_all_pairs():
 
 # --- BLOCCO MAIN ---
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Analisi di correlazione audio tra due directory di file WAV"
+    )
+    parser.add_argument("path_audio1", help="Percorso della prima directory di file audio (.wav)")
+    parser.add_argument("path_audio2", help="Percorso della seconda directory di file audio (.wav)")
+    parser.add_argument("output_file", help="Percorso del file di output dei risultati")
+
+    args = parser.parse_args()
+
     print("=== Analisi di Correlazione Audio - Implementazione Teorica ===")
-    print("Basato sui principi di correlazione, covarianza e autocorrelazione")
-    print("per processi stocastici stazionari ed ergodici")
-    print(f"Directory input (PATH_AUDIO_1): {PATH_AUDIO_1}")
-    print(f"Directory target (PATH_AUDIO_2): {PATH_AUDIO_2}")
-    print(f"File output: {OUTPUT_FILE}")
+    print(" Directory input 1:", args.path_audio1)
+    print(" Directory input 2:", args.path_audio2)
+    print(" File output:", args.output_file)
     print("=" * 70)
 
-    # Verifica che le directory esistano
-    if not os.path.exists(PATH_AUDIO_1):
-        print(f"Errore: Directory '{PATH_AUDIO_1}' non trovata.")
+    if not os.path.exists(args.path_audio1):
+        print(f"Errore: Directory '{args.path_audio1}' non trovata.")
+        exit(1)
+    if not os.path.exists(args.path_audio2):
+        print(f"Errore: Directory '{args.path_audio2}' non trovata.")
         exit(1)
 
-    if not os.path.exists(PATH_AUDIO_2):
-        print(f"Errore: Directory '{PATH_AUDIO_2}' non trovata.")
-        exit(1)
-
-    # Processa tutte le coppie
-    process_all_pairs()
+    process_all_pairs(args.path_audio1, args.path_audio2, args.output_file)
 
     print("\n=== Esecuzione completata ===")
     print("I risultati includono:")
