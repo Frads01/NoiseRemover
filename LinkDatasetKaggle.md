@@ -27,3 +27,7 @@
   <source type="audio/wav" src="samples_e_valutazioni/white/sample_010_denoised.wav"></source>
   <p>Your browser does not support the audio element.</p>
 </audio>
+<video controls src="samples_e_valutazioni/intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).mp4" title="Title"></video>
+
+
+<audio controls src="samples_e_valutazioni/intera_canzone_noisy_S10N1-(WHITE_NOISE)-(forkupines-semantics).wav" title="Title"></audio>
