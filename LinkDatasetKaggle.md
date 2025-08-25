@@ -24,6 +24,6 @@
 ![Audio]()
 
 <audio controls="controls">
-  <source type="audio/wav" src="samples_e_valutazioni/intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).wav"></source>
+  <source type="audio/wav" src="samples_e_valutazioni/white/sample_010_denoised.wav"></source>
   <p>Your browser does not support the audio element.</p>
 </audio>
