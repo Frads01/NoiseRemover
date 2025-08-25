@@ -91,12 +91,12 @@ python correlation.py <path_audio1> <path_audio2> <output_file>
 ## Allenare un nuovo modello
 
 Per allenare un modello è disponibile il notebook [`NoiseRemover.ipynb`](NoiseRemover.ipynb).  
-È necessario generare prima un dataset (singola classe, rumore bianco o mixed).
+È necessario generare prima un dataset (singola classe, rumore bianco o mixed) e segmentarlo con il notebook [`generate_best_segments.ipynb`](scripts/generate_best_segments.ipynb). Questo notebook prende tutti i brani del dataset e salva in una cartella i segmenti che ottimizzano correlazione e diversità spettrale, così da poterli usare come nuovo dataset.
 
 - Windows: impostare `soundfile` come backend Torchaudio.
 - Linux: impostare `sox` come backend Torchaudio.
 
-I pesi (`.pth`) vengono salvati ad ogni epoca nella directory `Weights`.
+Vengono salvati nella directory `Weights` i pesi (`.pth`) relativi all'epoca con miglioramento ottimale del SNR.
 
 ## Verifica dell'inferenza su pesi pre-addestrati
 
@@ -112,10 +112,6 @@ Utilizzare il notebook [`denoising_entire_song.ipynb`](scripts/denoising_entire_
 - `MODEL_PATH` → percorso ai pesi del modello da usare
 - `INPUT_AUDIO_PATH` → audio in ingresso
 - `OUTPUT_AUDIO_PATH` → audio in uscita
-
-## Usare un brano come dataset di partenza
-
-Il notebook [`generate_best_segments.ipynb`](scripts/generate_best_segments.ipynb) permette di salvare in una cartella i segmenti che ottimizzano correlazione e diversità spettrale, così da poterli usare come nuovo dataset.
 
 ## 20-Layered Deep Complex U-Net
 

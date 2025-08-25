@@ -88,15 +88,15 @@ python correlation.py <audio_dir1> <audio_dir2> <output_file>
 - `<audio_dir2>`: Second directory with WAV audio files.
 - `<output_file>`: Output file to save the analysis results.
 
-## Train a New Model
+## Training a new model
 
-To train a model, use the notebook [`NoiseRemover.ipynb`](NoiseRemover.ipynb).  
-You first need to generate a dataset (single-class, white noise, or mixed).
+To train a model, the notebook [`NoiseRemover.ipynb`](NoiseRemover.ipynb) is available.  
+You first need to generate a dataset (single class, white noise or mixed) and segment it using the notebook [`generate_best_segments.ipynb`](scripts/generate_best_segments.ipynb). This notebook processes all tracks in the dataset and saves in a folder those segments that optimize correlation and spectral diversity, so that they can be used as a new dataset.
 
-- On Windows: set `soundfile` as the Torchaudio backend.
-- On Linux: set `sox` as the Torchaudio backend.
+- **Windows**: set `soundfile` as the Torchaudio backend.  
+- **Linux**: set `sox` as the Torchaudio backend.  
 
-Weights (`.pth`) are saved for every epoch in the `Weights` directory.
+The `Weights` directory stores the `.pth` weights corresponding to the epoch with the best SNR improvement.
 
 ## Validate Model Inference on Pretrained Weights
 
@@ -112,10 +112,6 @@ Use the notebook [`denoising_entire_song.ipynb`](scripts/denoising_entire_song.i
 - `MODEL_PATH` → path to the weights of the chosen model
 - `INPUT_AUDIO_PATH` → input audio path
 - `OUTPUT_AUDIO_PATH` → output audio path
-
-## Using a Song as a Starting Dataset
-
-The notebook [`generate_best_segments.ipynb`](scripts/generate_best_segments.ipynb) lets you save segments that optimize both correlation and spectral diversity into a folder, allowing you to use them as a new dataset.
 
 ## 20-Layered Deep Complex U-Net
 
