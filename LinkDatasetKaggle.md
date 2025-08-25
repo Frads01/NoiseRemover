@@ -20,5 +20,3 @@
 * WHITE: [https://www.kaggle.com/datasets/frads01/musdb18-whitenoiseonly]()
 * MIXED: [https://www.kaggle.com/datasets/frads01/mwsdb8k]()
 * TUTTE LE DIVERSE CLASSI: [https://www.kaggle.com/datasets/frads01/musdb8k-class]()
-
-[sample_010_denoised.wav](https://github.com/user-attachments/files/21973165/sample_010_denoised.wav)
