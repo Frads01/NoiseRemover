@@ -21,6 +21,5 @@
 * MIXED: [https://www.kaggle.com/datasets/frads01/mwsdb8k]()
 * TUTTE LE DIVERSE CLASSI: [https://www.kaggle.com/datasets/frads01/musdb8k-class]()
 
-<p><strong>Segnale denoised:</strong></p>
-<audio controls="1" src="samples_e_valutazioni\white\sample_010_denoised.wav">Your browser does not support the audio tag.</audio>
+![Denoised](samples_e_valutazioni\intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).wav)
 
