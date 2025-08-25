@@ -21,5 +21,5 @@
 * MIXED: [https://www.kaggle.com/datasets/frads01/mwsdb8k]()
 * TUTTE LE DIVERSE CLASSI: [https://www.kaggle.com/datasets/frads01/musdb8k-class]()
 
-![Denoised](samples_e_valutazioni\intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).wav)
+![Audio](samples_e_valutazioni/intera_canzone_denoised_S1N1_WHITE_NOISE_(forkupines-semantics).wav)
 
